@@ -79,4 +79,4 @@ router.get('/report/:id/pdf', (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = { router, basicAuth };

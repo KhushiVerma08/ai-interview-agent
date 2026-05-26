@@ -18,7 +18,7 @@ const mammoth     = require("mammoth");
 const nodemailer  = require("nodemailer");
 
 const { db } = require("./src/config/db");
-const hrRoutes = require("./src/routes/hr");
+const { router: hrRoutes, basicAuth } = require("./src/routes/hr");
 const interviewRoutes = require("./src/routes/interview");
 const emailService = require("./src/services/emailService");
 
@@ -39,6 +39,15 @@ if (process.env.GEMINI_API_KEY) {
 // ── Middleware ────────────────────────────────────────────────
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
+
+// Protect HR dashboard and root with basicAuth
+app.use("/", (req, res, next) => {
+  if (req.path === "/" || req.path === "/index.html") {
+    return basicAuth(req, res, next);
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 
 // ── File upload ───────────────────────────────────────────────
@@ -50,8 +59,12 @@ const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_, file, cb) => {
-    const allowed = [".pdf", ".doc", ".docx", ".txt"];
-    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+    const allowed = [".pdf"];
+    if (allowed.includes(path.extname(file.originalname).toLowerCase())) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only PDF files are allowed"));
+    }
   },
 });
 
@@ -120,6 +133,7 @@ function cleanupFile(filePath) {
 //  ROUTE 1 — Upload JD + Resume  →  Analyse & categorise
 // ═══════════════════════════════════════════════════════════════
 app.post("/api/analyse",
+  basicAuth,
   upload.fields([{ name: "resume" }, { name: "jd" }]),
   async (req, res) => {
     let resumePath, jdPath;
