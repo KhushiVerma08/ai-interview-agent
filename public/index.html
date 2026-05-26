@@ -342,23 +342,19 @@ select{cursor:pointer}
         <div class="form-grid">
           <div class="form-card">
             <div class="form-label">📋 Job Description</div>
-            <div class="drop-zone" id="jd-zone">
+            <div class="drop-zone" id="jd-zone" onclick="document.getElementById('jd-file').click()">
               <input type="file" id="jd-file" accept=".pdf" onchange="handleDrop('jd',this)">
-              <div class="drop-icon">📄</div><div class="drop-title">Drop JD file here</div><div class="drop-hint">PDF ONLY · max 10MB</div>
+              <div class="drop-icon">📄</div><div class="drop-title">Click to upload JD file</div><div class="drop-hint">PDF ONLY · max 10MB</div>
               <div class="drop-fname" id="jd-fname"></div>
             </div>
-            <div class="or-div">or paste text</div>
-            <textarea id="jd-text" placeholder="Paste job description here…" rows="4" oninput="checkEnableButton()"></textarea>
           </div>
           <div class="form-card">
             <div class="form-label">👤 Candidate Resume</div>
-            <div class="drop-zone" id="resume-zone">
+            <div class="drop-zone" id="resume-zone" onclick="document.getElementById('resume-file').click()">
               <input type="file" id="resume-file" accept=".pdf" onchange="handleDrop('resume',this)">
-              <div class="drop-icon">📎</div><div class="drop-title">Drop resume here</div><div class="drop-hint">PDF ONLY · max 5MB</div>
+              <div class="drop-icon">📎</div><div class="drop-title">Click to upload resume</div><div class="drop-hint">PDF ONLY · max 5MB</div>
               <div class="drop-fname" id="resume-fname"></div>
             </div>
-            <div class="or-div">or paste text</div>
-            <textarea id="resume-text" placeholder="Paste candidate resume here…" rows="4" oninput="checkEnableButton()"></textarea>
           </div>
           <div class="form-card">
             <div class="form-label">⚙️ Interview Configuration</div>
@@ -1120,10 +1116,8 @@ function handleDrop(type, input) {
 }
 
 function checkEnableButton() {
-  const jdText = document.getElementById('jd-text').value.trim();
-  const resumeText = document.getElementById('resume-text').value.trim();
-  const hasJd = uploadedFiles.jd || jdText;
-  const hasResume = uploadedFiles.resume || resumeText;
+  const hasJd = !!uploadedFiles.jd;
+  const hasResume = !!uploadedFiles.resume;
   document.getElementById('analyse-btn').disabled = !(hasJd && hasResume);
 }
 
@@ -1134,16 +1128,13 @@ function setPills(el, group) {
 }
 
 async function analyseDocuments() {
-  const jdText     = document.getElementById('jd-text').value.trim();
-  const resumeText = document.getElementById('resume-text').value.trim();
-  if (!uploadedFiles.jd && !jdText && !uploadedFiles.resume && !resumeText) { toast('Please upload a JD or resume first', '⚠'); return; }
+  if (!uploadedFiles.jd || !uploadedFiles.resume) { toast('Please upload both JD and resume PDFs first', '⚠'); return; }
   const btn = document.getElementById('analyse-btn');
   btn.innerHTML = '<span class="spinner"></span> Analysing…'; btn.disabled = true;
   try {
     const fd = new FormData();
     if (uploadedFiles.jd)     fd.append('jd', uploadedFiles.jd);
     if (uploadedFiles.resume) fd.append('resume', uploadedFiles.resume);
-    fd.append('jdText', jdText); fd.append('resumeText', resumeText);
     fd.append('role', document.getElementById('role-select').value);
     fd.append('questionCount', selectedQ);
     fd.append('recruiterEmail', document.getElementById('recruiter-email').value);
