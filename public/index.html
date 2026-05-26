@@ -111,11 +111,13 @@ tr.clickable:hover td{background:rgba(91,124,250,.04);cursor:pointer}
 .drop-zone{border:1.5px dashed var(--border2);border-radius:var(--r);padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
 .drop-zone:hover,.drop-zone.over{border-color:var(--accent);background:rgba(91,124,250,.04)}
 .drop-zone.has-file{border-color:var(--accent2);border-style:solid;background:rgba(52,211,153,.03)}
-.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;z-index:1}
 .drop-icon{font-size:28px;margin-bottom:10px}
 .drop-title{font-size:14px;font-weight:500;margin-bottom:4px}
 .drop-hint{font-size:12px;color:var(--text3)}
-.drop-fname{font-size:12px;color:var(--accent2);margin-top:8px;font-weight:500}
+.drop-fname{font-size:12px;color:var(--accent2);margin-top:8px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px;position:relative;z-index:2}
+.remove-btn { background: rgba(248,113,113,0.15); color: var(--accent3); border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: all 0.2s; position:relative; z-index:10; }
+.remove-btn:hover { background: var(--accent3); color: white; transform: scale(1.1); }
 input[type=text],input[type=email],input[type=datetime-local],select,textarea{
   width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;
   color:var(--text);font-family:var(--font);font-size:13px;padding:10px 14px;outline:none;
@@ -342,7 +344,7 @@ select{cursor:pointer}
         <div class="form-grid">
           <div class="form-card">
             <div class="form-label">📋 Job Description</div>
-            <div class="drop-zone" id="jd-zone" onclick="document.getElementById('jd-file').click()">
+            <div class="drop-zone" id="jd-zone">
               <input type="file" id="jd-file" accept=".pdf" onchange="handleDrop('jd',this)">
               <div class="drop-icon">📄</div><div class="drop-title">Click to upload JD file</div><div class="drop-hint">PDF ONLY · max 10MB</div>
               <div class="drop-fname" id="jd-fname"></div>
@@ -350,7 +352,7 @@ select{cursor:pointer}
           </div>
           <div class="form-card">
             <div class="form-label">👤 Candidate Resume</div>
-            <div class="drop-zone" id="resume-zone" onclick="document.getElementById('resume-file').click()">
+            <div class="drop-zone" id="resume-zone">
               <input type="file" id="resume-file" accept=".pdf" onchange="handleDrop('resume',this)">
               <div class="drop-icon">📎</div><div class="drop-title">Click to upload resume</div><div class="drop-hint">PDF ONLY · max 5MB</div>
               <div class="drop-fname" id="resume-fname"></div>
@@ -1107,11 +1109,30 @@ async function saveNotes(sessionId) {
 let currentSessionId = null;
 
 function handleDrop(type, input) {
-  const file = input.files[0]; if (!file) return;
+  const file = input.files[0];
+  if (!file) return;
+
+  const maxMB = type === 'jd' ? 10 : 5;
+  if (file.size > maxMB * 1024 * 1024) {
+    toast(`Limit exceeded! ${type.toUpperCase()} must be under ${maxMB}MB.`, '⚠');
+    input.value = '';
+    return;
+  }
+
   uploadedFiles[type] = file;
   const zone = document.getElementById(`${type}-zone`);
   zone.classList.add('has-file');
-  document.getElementById(`${type}-fname`).textContent = '✓ ' + file.name;
+  document.getElementById(`${type}-fname`).innerHTML = `<span>✓ ${file.name}</span> <button class="remove-btn" onclick="removeFile('${type}', event)" title="Remove file">✕</button>`;
+  checkEnableButton();
+}
+
+function removeFile(type, event) {
+  event.preventDefault();
+  event.stopPropagation();
+  uploadedFiles[type] = null;
+  document.getElementById(`${type}-file`).value = '';
+  document.getElementById(`${type}-zone`).classList.remove('has-file');
+  document.getElementById(`${type}-fname`).innerHTML = '';
   checkEnableButton();
 }
 
