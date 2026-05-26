@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InterviewAI — Candidate Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300..600;1,300..600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0a0d14; --bg2: #10141f; --bg3: #171c2e; --card: #13182a; --border: rgba(99,120,255,0.18);
+  --accent: #6378ff; --green: #38f0c0; --red: #ff6b8a; --amber: #f59e0b;
+  --text: #e8eaf6; --muted: #7880a0;
+  --font: 'DM Sans', sans-serif; --mono: 'DM Mono', monospace; --r: 16px;
+}
+body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 40px; width: 100%; max-width: 600px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); text-align: center; transition: all 0.4s ease; position: relative; overflow: hidden; }
+h1 { font-weight: 300; font-size: 28px; margin-bottom: 12px; }
+h1 strong { font-weight: 600; }
+p { color: var(--muted); font-size: 15px; line-height: 1.6; margin-bottom: 24px; }
+.btn { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 14px 32px; font-family: var(--font); font-size: 15px; font-weight: 600; cursor: pointer; transition: all .2s; }
+.btn:hover { background: #7b8fff; transform: translateY(-2px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+.btn-outline:hover { border-color: var(--text); }
+.btn-green { background: var(--green); color: #0a0d14; }
+.btn-green:hover { background: #5af5d4; }
+
+/* AI Visualizer */
+.visualizer { display: flex; align-items: center; justify-content: center; gap: 8px; height: 60px; margin: 30px 0; }
+.bar { width: 6px; height: 10px; background: var(--accent); border-radius: 4px; transition: height 0.1s ease; opacity: 0.5; }
+.visualizer.speaking .bar { opacity: 1; animation: bounce 0.8s infinite ease-in-out alternate; }
+.visualizer.speaking .bar:nth-child(1) { animation-delay: 0.1s; }
+.visualizer.speaking .bar:nth-child(2) { animation-delay: 0.3s; }
+.visualizer.speaking .bar:nth-child(3) { animation-delay: 0.0s; }
+.visualizer.speaking .bar:nth-child(4) { animation-delay: 0.4s; }
+.visualizer.speaking .bar:nth-child(5) { animation-delay: 0.2s; }
+@keyframes bounce { 0% { height: 10px; } 100% { height: 50px; background: var(--green); } }
+
+/* Candidate Mic Visualizer */
+.visualizer.listening .bar { background: var(--red); opacity: 1; animation: listenPulse 1s infinite ease-in-out alternate; }
+@keyframes listenPulse { 0% { height: 20px; } 100% { height: 35px; } }
+
+.status-text { font-size: 13px; font-family: var(--mono); color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 20px; min-height: 20px; }
+
+#transcript-box { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 16px; min-height: 100px; max-height: 200px; overflow-y: auto; text-align: left; font-size: 14px; margin-bottom: 24px; display: none; }
+.msg-ai { color: var(--accent); margin-bottom: 8px; }
+.msg-human { color: var(--text); margin-bottom: 8px; border-left: 2px solid var(--green); padding-left: 8px; }
+
+#controls { display: none; gap: 12px; justify-content: center; }
+
+/* Screens */
+#screen-welcome, #screen-interview, #screen-completed, #screen-error { display: none; }
+#screen-welcome.active, #screen-interview.active, #screen-completed.active, #screen-error.active { display: block; animation: fadeIn 0.4s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+</style>
+</head>
+<body>
+
+<div class="card">
+  <!-- WELCOME SCREEN -->
+  <div id="screen-welcome" class="active">
+    <h1>Welcome, <strong id="cand-name">Candidate</strong></h1>
+    <p>You are about to start your AI interview for the <strong id="cand-role">Role</strong> position. The AI Agent will ask you questions using voice, and you will reply using your microphone.</p>
+    <div style="background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; padding: 16px; margin-bottom: 24px; color: var(--amber); font-size: 13px; text-align: left;">
+      <strong>Important:</strong>
+      <ul style="margin-top: 6px; padding-left: 20px; line-height: 1.6;">
+        <li>Please ensure you are in a quiet room.</li>
+        <li>Your browser will ask for microphone permissions.</li>
+        <li>Your audio will be recorded and transcribed.</li>
+      </ul>
+    </div>
+    <button class="btn" id="btn-start" onclick="startInterview()">Allow Microphone & Start Interview</button>
+  </div>
+
+  <!-- INTERVIEW SCREEN -->
+  <div id="screen-interview">
+    <div class="status-text" id="ai-status">Connecting to AI...</div>
+    
+    <div class="visualizer" id="visualizer">
+      <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+    </div>
+    
+    <div id="transcript-box"></div>
+    
+    <div id="controls">
+      <button class="btn btn-outline" id="btn-pause" style="display:none;" onclick="pauseRecording()">Pause</button>
+      <button class="btn btn-green" id="btn-done" onclick="finishAnswering()">Done Answering</button>
+    </div>
+  </div>
+
+  <!-- COMPLETED SCREEN -->
+  <div id="screen-completed">
+    <h1 style="color: var(--green);">Interview <strong>Completed</strong></h1>
+    <p>Thank you for your time. Your responses have been recorded and the HR team will be in touch with you shortly.</p>
+    <button class="btn btn-outline" onclick="window.close()">Close Window</button>
+  </div>
+
+  <!-- ERROR SCREEN -->
+  <div id="screen-error">
+    <h1 style="color: var(--red);"><strong>Error</strong></h1>
+    <p id="error-msg">Something went wrong.</p>
+  </div>
+</div>
+
+<script>
+const urlParams = new URLSearchParams(window.location.search);
+const sessionId = urlParams.get('session');
+
+let sessionData = null;
+let currentQuestion = null;
+let isFollowup = false;
+
+// Web Speech APIs
+let synthesis = window.speechSynthesis;
+let recognition = null;
+let finalTranscript = '';
+let interimTranscript = '';
+
+// MediaRecorder (Audio Capture)
+let mediaRecorder = null;
+let audioChunks = [];
+let audioStream = null;
+
+if ('webkitSpeechRecognition' in window) {
+  recognition = new webkitSpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = 'en-US';
+  
+  recognition.onresult = (event) => {
+    interimTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript + ' ';
+      } else {
+        interimTranscript += event.results[i][0].transcript;
+      }
+    }
+    updateTranscriptUI();
+  };
+  
+  recognition.onerror = (e) => console.error("Speech Recognition Error:", e);
+} else {
+  showError("Your browser does not support Speech Recognition. Please use Chrome or Edge.");
+}
+
+async function loadSession() {
+  if (!sessionId) return showError("No session ID provided.");
+  try {
+    const res = await fetch(`/api/interview/session/${sessionId}`);
+    const data = await res.json();
+    if (!data.success) return showError(data.error);
+    sessionData = data.session;
+    document.getElementById('cand-name').textContent = sessionData.candidateName;
+    document.getElementById('cand-role').textContent = sessionData.role;
+  } catch (err) {
+    showError(err.message);
+  }
+}
+loadSession();
+
+function showScreen(id) {
+  document.querySelectorAll('.card > div').forEach(el => el.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function showError(msg) {
+  document.getElementById('error-msg').textContent = msg;
+  showScreen('screen-error');
+}
+
+async function startInterview() {
+  try {
+    // Request microphone permissions
+    audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    showScreen('screen-interview');
+    
+    const res = await fetch('/api/interview/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    
+    currentQuestion = data.question;
+    isFollowup = false;
+    
+    // AI Speaks
+    speakAI(data.opening);
+    
+  } catch (err) {
+    showError("Could not start interview: " + err.message);
+  }
+}
+
+function updateTranscriptUI() {
+  const box = document.getElementById('transcript-box');
+  let html = '';
+  // Only show the candidate's active speech in the box
+  if (finalTranscript || interimTranscript) {
+    box.style.display = 'block';
+    html += `<div class="msg-human"><strong>You:</strong> ${finalTranscript} <i>${interimTranscript}</i></div>`;
+  }
+  box.innerHTML = html;
+  box.scrollTop = box.scrollHeight;
+}
+
+function speakAI(text) {
+  if (!synthesis) return startListening();
+  
+  document.getElementById('ai-status').textContent = "AI is speaking...";
+  document.getElementById('visualizer').className = "visualizer speaking";
+  document.getElementById('controls').style.display = "none";
+  document.getElementById('transcript-box').style.display = "none";
+  
+  const utterance = new SpeechSynthesisUtterance(text);
+  // Try to find a good English voice
+  const voices = synthesis.getVoices();
+  const goodVoice = voices.find(v => v.lang.includes('en') && v.name.includes('Google') && v.name.includes('Female')) || 
+                    voices.find(v => v.lang === 'en-US');
+  if (goodVoice) utterance.voice = goodVoice;
+  
+  utterance.onend = () => {
+    startListening();
+  };
+  
+  synthesis.speak(utterance);
+}
+
+function startListening() {
+  document.getElementById('ai-status').textContent = "Listening... (Speak now)";
+  document.getElementById('visualizer').className = "visualizer listening";
+  document.getElementById('controls').style.display = "flex";
+  
+  finalTranscript = '';
+  interimTranscript = '';
+  updateTranscriptUI();
+  
+  if (recognition) recognition.start();
+  
+  // Start Audio Recording
+  if (audioStream && MediaRecorder) {
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(audioStream);
+    mediaRecorder.ondataavailable = e => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+    mediaRecorder.start();
+  }
+}
+
+async function finishAnswering() {
+  document.getElementById('btn-done').disabled = true;
+  document.getElementById('btn-done').textContent = "Processing...";
+  document.getElementById('ai-status').textContent = "AI is thinking...";
+  document.getElementById('visualizer').className = "visualizer";
+  
+  if (recognition) recognition.stop();
+  
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    mediaRecorder.onstop = async () => {
+      await submitAnswer();
+    };
+    mediaRecorder.stop();
+  } else {
+    await submitAnswer();
+  }
+}
+
+async function submitAnswer() {
+  const answer = finalTranscript.trim() || interimTranscript.trim();
+  
+  // Send Answer Text
+  try {
+    // 1. Post Audio Blob
+    if (audioChunks.length > 0) {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+      const fd = new FormData();
+      fd.append('audio', audioBlob);
+      fd.append('sessionId', sessionId);
+      fd.append('questionId', currentQuestion.id);
+      await fetch('/api/interview/audio', { method: 'POST', body: fd });
+    }
+    
+    // 2. Post Text Answer
+    const res = await fetch('/api/interview/answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId,
+        questionId: currentQuestion.id,
+        answerText: answer || "(Silence/No response detected)",
+        isFollowup,
+        followupOf: isFollowup ? currentQuestion.id : null
+      })
+    });
+    
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    
+    document.getElementById('btn-done').disabled = false;
+    document.getElementById('btn-done').textContent = "Done Answering";
+    
+    if (data.action === "complete") {
+      speakAI(data.closing);
+      // Hack to show completion after speech
+      setTimeout(() => showScreen('screen-completed'), 8000); 
+      return;
+    }
+    
+    let nextSpeech = data.evaluation.acknowledgment + " ";
+    if (data.action === "followup") {
+      isFollowup = true;
+      nextSpeech += data.followup.question;
+      // We keep the same currentQuestion object since it's a followup
+    } else {
+      isFollowup = false;
+      currentQuestion = data.nextQuestion;
+      nextSpeech += currentQuestion.text;
+    }
+    
+    speakAI(nextSpeech);
+    
+  } catch (err) {
+    showError("Submission failed: " + err.message);
+  }
+}
+
+// Initialize voices
+window.speechSynthesis.onvoiceschanged = () => { window.speechSynthesis.getVoices(); };
+
+</script>
+</body>
+</html>

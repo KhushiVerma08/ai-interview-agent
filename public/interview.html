@@ -1,0 +1,1244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>InterviewAI — HR Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+:root{
+  --bg:#07090f;--bg2:#0d1117;--bg3:#161b27;--bg4:#1c2333;
+  --card:#111827;--card2:#1a2235;
+  --border:#1e2d45;--border2:#253454;
+  --accent:#5b7cfa;--accent2:#34d399;--accent3:#f87171;--accent4:#fbbf24;--accent5:#a78bfa;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#4b5e7a;
+  --font:'Inter',sans-serif;--mono:'JetBrains Mono',monospace;
+  --r:10px;--r2:14px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;display:flex;font-size:14px;overflow:hidden}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}::-webkit-scrollbar-track{background:transparent}
+
+/* ── SIDEBAR ── */
+.sidebar{width:220px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;padding:0}
+.sb-logo{padding:20px 18px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.sb-logo .orb{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent5));display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.sb-logo .brand{font-size:14px;font-weight:600;letter-spacing:-.3px}
+.sb-logo .ver{font-size:10px;color:var(--text3);margin-top:1px}
+.sb-nav{flex:1;padding:12px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+.nav-section{font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.8px;padding:10px 8px 6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;cursor:pointer;transition:all .15s;color:var(--text2);font-size:13px;font-weight:400;position:relative;user-select:none}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:rgba(91,124,250,.12);color:var(--accent);font-weight:500}
+.nav-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:18px;background:var(--accent);border-radius:0 3px 3px 0}
+.nav-item .ico{font-size:15px;width:20px;text-align:center;flex-shrink:0}
+.nav-badge{margin-left:auto;font-size:10px;background:var(--accent);color:white;border-radius:10px;padding:1px 7px;font-weight:500}
+.nav-badge.red{background:var(--accent3)}
+.nav-badge.green{background:var(--accent2);color:#064e3b}
+.sb-footer{padding:14px 16px;border-top:1px solid var(--border);font-size:11px;color:var(--text3)}
+.status-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent2);margin-right:6px}
+
+/* ── MAIN ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{height:56px;background:var(--bg2);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:16px;flex-shrink:0}
+.topbar-title{font-size:15px;font-weight:500;letter-spacing:-.3px}
+.topbar-sub{font-size:12px;color:var(--text3)}
+.topbar-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.btn{display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;font-family:var(--font);transition:all .15s;border:none}
+.btn-primary{background:var(--accent);color:white}.btn-primary:hover{background:#6b8cff;transform:translateY(-1px)}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}.btn-ghost:hover{color:var(--text);border-color:var(--border2)}
+.btn-sm{padding:6px 12px;font-size:12px}
+.btn-danger{background:rgba(248,113,113,.1);color:var(--accent3);border:1px solid rgba(248,113,113,.2)}
+.btn-success{background:rgba(52,211,153,.1);color:var(--accent2);border:1px solid rgba(52,211,153,.2)}
+
+/* ── CONTENT ── */
+.content{flex:1;overflow-y:auto;padding:24px}
+.tab-pane{display:none}.tab-pane.active{display:block;animation:fadeUp .3s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── STAT CARDS ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.stat-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:18px 20px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;border-radius:var(--r2) var(--r2) 0 0}
+.stat-card.blue::before{background:linear-gradient(90deg,var(--accent),var(--accent5))}
+.stat-card.green::before{background:linear-gradient(90deg,var(--accent2),#6ee7b7)}
+.stat-card.red::before{background:linear-gradient(90deg,var(--accent3),#fca5a5)}
+.stat-card.amber::before{background:linear-gradient(90deg,var(--accent4),#fde68a)}
+.stat-num{font-size:32px;font-weight:300;font-family:var(--mono);letter-spacing:-1px;margin-bottom:3px}
+.stat-label{font-size:11px;color:var(--text2);font-weight:500;text-transform:uppercase;letter-spacing:.6px}
+.stat-delta{font-size:11px;margin-top:8px;display:flex;align-items:center;gap:4px}
+.stat-delta.up{color:var(--accent2)}.stat-delta.down{color:var(--accent3)}
+
+/* ── TABLES ── */
+.table-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
+.table-header{padding:14px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px}
+.table-title{font-size:13px;font-weight:500}
+.search-box{display:flex;align-items:center;gap:8px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 12px;flex:1;max-width:280px}
+.search-box input{background:none;border:none;outline:none;font-family:var(--font);font-size:13px;color:var(--text);width:100%}
+.search-box input::placeholder{color:var(--text3)}
+.filter-select{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:7px 12px;font-family:var(--font);font-size:12px;color:var(--text2);outline:none;cursor:pointer}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.6px;padding:11px 20px;border-bottom:1px solid var(--border);background:var(--bg3)}
+td{padding:13px 20px;font-size:13px;border-bottom:1px solid rgba(30,45,69,.5);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr.clickable:hover td{background:rgba(91,124,250,.04);cursor:pointer}
+.avatar{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;flex-shrink:0}
+.cell-name{display:flex;align-items:center;gap:10px}
+.cell-primary{font-weight:500;color:var(--text)}
+.cell-sub{font-size:11px;color:var(--text3);margin-top:1px}
+
+/* ── BADGES ── */
+.badge{font-size:10px;font-weight:500;padding:3px 9px;border-radius:20px;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.badge-blue{background:rgba(91,124,250,.12);color:var(--accent);border:1px solid rgba(91,124,250,.2)}
+.badge-green{background:rgba(52,211,153,.1);color:var(--accent2);border:1px solid rgba(52,211,153,.2)}
+.badge-red{background:rgba(248,113,113,.1);color:var(--accent3);border:1px solid rgba(248,113,113,.2)}
+.badge-amber{background:rgba(251,191,36,.1);color:var(--accent4);border:1px solid rgba(251,191,36,.2)}
+.badge-purple{background:rgba(167,139,250,.1);color:var(--accent5);border:1px solid rgba(167,139,250,.2)}
+.badge-gray{background:rgba(75,94,122,.15);color:var(--text2);border:1px solid var(--border)}
+
+/* ── SCORE BAR ── */
+.score-bar{display:flex;align-items:center;gap:8px}
+.score-track{width:60px;height:4px;background:var(--border);border-radius:2px;overflow:hidden;flex-shrink:0}
+.score-fill{height:100%;border-radius:2px;transition:width .4s}
+.score-val{font-family:var(--mono);font-size:11px;color:var(--text2)}
+
+/* ── UPLOAD FORM ── */
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:900px}
+.form-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:22px}
+.form-card.full{grid-column:1/-1}
+.form-label{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.drop-zone{border:1.5px dashed var(--border2);border-radius:var(--r);padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+.drop-zone:hover,.drop-zone.over{border-color:var(--accent);background:rgba(91,124,250,.04)}
+.drop-zone.has-file{border-color:var(--accent2);border-style:solid;background:rgba(52,211,153,.03)}
+.drop-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.drop-icon{font-size:28px;margin-bottom:10px}
+.drop-title{font-size:14px;font-weight:500;margin-bottom:4px}
+.drop-hint{font-size:12px;color:var(--text3)}
+.drop-fname{font-size:12px;color:var(--accent2);margin-top:8px;font-weight:500}
+input[type=text],input[type=email],input[type=datetime-local],select,textarea{
+  width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;
+  color:var(--text);font-family:var(--font);font-size:13px;padding:10px 14px;outline:none;
+  transition:border-color .2s
+}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{resize:vertical;min-height:80px;line-height:1.6}
+select{cursor:pointer}
+.form-row{margin-bottom:14px}
+.form-row label{display:block;font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:400}
+.or-div{text-align:center;font-size:11px;color:var(--text3);margin:10px 0;position:relative}
+.or-div::before,.or-div::after{content:'';position:absolute;top:50%;width:44%;height:1px;background:var(--border)}
+.or-div::before{left:0}.or-div::after{right:0}
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{padding:6px 14px;border-radius:20px;border:1px solid var(--border);font-size:12px;cursor:pointer;transition:all .15s;color:var(--text2);background:transparent;font-family:var(--font);white-space:nowrap}
+.pill:hover{border-color:var(--accent);color:var(--accent)}
+.pill.active{background:rgba(91,124,250,.12);border-color:var(--accent);color:var(--accent);font-weight:500}
+.check-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text2);margin-bottom:10px;cursor:pointer}
+.check-row input{accent-color:var(--accent);width:14px;height:14px}
+
+/* ── ANALYSIS RESULT ── */
+.analysis-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:22px;margin-top:20px;max-width:900px;display:none}
+.analysis-panel.show{display:block;animation:fadeUp .3s ease}
+.level-banner{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;padding:16px 18px;border-radius:var(--r);margin-bottom:18px}
+.level-banner.fresher{background:rgba(91,124,250,.08);border:1px solid rgba(91,124,250,.2)}
+.level-banner.intermediate{background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.2)}
+.level-banner.experienced{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2)}
+.level-name{font-size:18px;font-weight:500}
+.level-reason{font-size:12px;color:var(--text2);margin-top:3px}
+.info-chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.info-chip{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:12px}
+.info-chip span{color:var(--text3);margin-right:6px}
+.skill-cloud{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.skill-tag{background:rgba(91,124,250,.08);border:1px solid rgba(91,124,250,.18);color:var(--accent);font-size:11px;padding:3px 10px;border-radius:20px}
+.skill-tag.miss{background:rgba(248,113,113,.07);border-color:rgba(248,113,113,.2);color:var(--accent3)}
+.q-list-preview{display:flex;flex-direction:column;gap:6px}
+.q-chip-prev{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:9px 14px;display:flex;align-items:center;gap:10px;font-size:12px}
+.q-num-badge{font-family:var(--mono);font-size:10px;color:var(--accent);min-width:24px}
+.q-type-badge{font-size:10px;padding:2px 8px;border-radius:10px;font-weight:500}
+.qt-technical{background:rgba(91,124,250,.1);color:var(--accent)}
+.qt-behavioral{background:rgba(52,211,153,.1);color:var(--accent2)}
+.qt-situational{background:rgba(251,191,36,.1);color:var(--accent4)}
+.qt-motivational{background:rgba(248,113,113,.1);color:var(--accent3)}
+.link-row{display:flex;align-items:center;gap:10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:11px 14px}
+.link-row .url{flex:1;font-family:var(--mono);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2)}
+
+/* ── DETAIL PANEL (slide-in) ── */
+.detail-overlay{position:fixed;inset:0;background:rgba(7,9,15,.7);z-index:100;display:none;backdrop-filter:blur(2px)}
+.detail-overlay.show{display:block;animation:fadeIn .2s ease}
+.detail-panel{position:fixed;right:0;top:0;bottom:0;width:720px;background:var(--bg2);border-left:1px solid var(--border);z-index:101;display:flex;flex-direction:column;overflow:hidden;transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,.2,1)}
+.detail-panel.show{transform:translateX(0)}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.detail-header{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.detail-tabs{display:flex;gap:0;border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto}
+.detail-tab{padding:11px 20px;font-size:13px;cursor:pointer;color:var(--text3);border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap}
+.detail-tab:hover{color:var(--text)}
+.detail-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.detail-body{flex:1;overflow-y:auto;padding:20px 22px}
+.close-btn{width:32px;height:32px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .15s}
+.close-btn:hover{color:var(--text);border-color:var(--border2)}
+
+/* ── TRANSCRIPT VIEW ── */
+.transcript-wrap{display:flex;flex-direction:column;gap:10px}
+.t-msg{display:flex;gap:10px;align-items:flex-start}
+.t-msg.ai{flex-direction:row}
+.t-msg.candidate{flex-direction:row-reverse}
+.t-av{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.t-msg.ai .t-av{background:linear-gradient(135deg,var(--accent),var(--accent5))}
+.t-msg.candidate .t-av{background:var(--bg3);border:1px solid var(--border);font-weight:600;font-size:11px}
+.t-bubble{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:13px;line-height:1.65;max-width:85%}
+.t-msg.ai .t-bubble{border-top-left-radius:2px}
+.t-msg.candidate .t-bubble{border-top-right-radius:2px;background:rgba(91,124,250,.06)}
+.t-tag{font-size:10px;color:var(--accent);font-weight:500;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.t-score-inline{display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:6px;border-top:1px solid var(--border)}
+.t-score-label{font-size:10px;color:var(--text3)}
+.t-score-num{font-family:var(--mono);font-size:11px;font-weight:500}
+.q-section-divider{display:flex;align-items:center;gap:10px;margin:14px 0 8px;font-size:10px;font-weight:500;color:var(--text3);text-transform:uppercase;letter-spacing:.6px}
+.q-section-divider::before,.q-section-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.followup-tag{background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.2);color:var(--accent5);font-size:10px;padding:2px 8px;border-radius:10px;display:inline-block;margin-bottom:4px}
+
+/* ── ANALYTICS ── */
+.analytics-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.analytics-grid.wide{grid-template-columns:2fr 1fr}
+.chart-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:20px}
+.chart-title{font-size:13px;font-weight:500;margin-bottom:4px}
+.chart-sub{font-size:11px;color:var(--text3);margin-bottom:16px}
+.chart-wrap{position:relative;height:180px}
+.donut-wrap{position:relative;height:160px}
+.verdict-legend{display:flex;flex-direction:column;gap:7px;margin-top:14px}
+.vl-row{display:flex;align-items:center;justify-content:space-between;font-size:12px}
+.vl-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-right:8px}
+.vl-label{display:flex;align-items:center;flex:1;color:var(--text2)}
+.vl-val{font-family:var(--mono);font-size:11px;color:var(--text2)}
+.skills-gap-list{display:flex;flex-direction:column;gap:7px;margin-top:8px}
+.sg-row{display:flex;align-items:center;gap:10px}
+.sg-label{font-size:12px;color:var(--text2);min-width:120px;flex-shrink:0}
+.sg-track{flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden}
+.sg-fill{height:100%;border-radius:3px;background:var(--accent3)}
+.sg-val{font-size:11px;font-family:var(--mono);color:var(--text3);min-width:30px;text-align:right}
+
+/* ── SCORE BREAKDOWN ── */
+.score-breakdown{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.sd-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);padding:14px;text-align:center}
+.sd-num{font-size:26px;font-weight:300;font-family:var(--mono);margin-bottom:2px}
+.sd-label{font-size:10px;color:var(--text3)}
+.sd-bar{height:3px;background:var(--border);border-radius:2px;margin-top:8px;overflow:hidden}
+.sd-fill{height:100%;border-radius:2px}
+
+/* ── VERDICT CARD ── */
+.verdict-card{border-radius:var(--r);padding:16px 18px;margin-bottom:18px;display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.verdict-card.strongly-recommended{background:rgba(52,211,153,.07);border:1px solid rgba(52,211,153,.2)}
+.verdict-card.recommended{background:rgba(91,124,250,.07);border:1px solid rgba(91,124,250,.2)}
+.verdict-card.needs_further_review{background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.2)}
+.verdict-card.not-recommended{background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.2)}
+.verdict-title{font-size:15px;font-weight:500;margin-bottom:4px}
+.verdict-sub{font-size:12px;line-height:1.6}
+.verdict-score{font-size:36px;font-weight:300;font-family:var(--mono)}
+
+/* ── LIVE STATUS ── */
+.live-badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:500;padding:3px 10px;border-radius:20px;background:rgba(248,113,113,.12);color:var(--accent3);border:1px solid rgba(248,113,113,.25)}
+.live-dot{width:5px;height:5px;border-radius:50%;background:var(--accent3);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ── TOAST ── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--card2);border:1px solid var(--border2);border-radius:var(--r);padding:12px 18px;font-size:13px;display:flex;align-items:center;gap:10px;z-index:999;transform:translateY(80px);opacity:0;transition:all .3s;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.toast.show{transform:translateY(0);opacity:1}
+
+/* ── EMPTY STATE ── */
+.empty-state{text-align:center;padding:60px 20px;color:var(--text3)}
+.empty-icon{font-size:40px;margin-bottom:12px}
+.empty-title{font-size:15px;color:var(--text2);margin-bottom:6px}
+.empty-sub{font-size:13px}
+
+/* ── LOADERS ── */
+.spinner{display:inline-block;width:14px;height:14px;border:2px solid rgba(255,255,255,.25);border-top-color:white;border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.page-loader{display:flex;align-items:center;justify-content:center;padding:80px;color:var(--text3);gap:12px;font-size:13px}
+
+/* ── TIMELINE ── */
+.timeline{display:flex;flex-direction:column;gap:0}
+.tl-item{display:flex;gap:14px;padding-bottom:16px;position:relative}
+.tl-item:last-child{padding-bottom:0}
+.tl-item:not(:last-child)::before{content:'';position:absolute;left:15px;top:30px;bottom:0;width:1px;background:var(--border)}
+.tl-dot{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;border:1px solid var(--border);background:var(--bg3)}
+.tl-content{flex:1}
+.tl-title{font-size:13px;font-weight:500}
+.tl-time{font-size:11px;color:var(--text3);margin-top:2px}
+.tl-detail{font-size:12px;color:var(--text2);margin-top:4px;line-height:1.5}
+
+/* ── HR NOTES ── */
+.notes-area{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:13px;padding:12px;min-height:100px;resize:vertical;outline:none}
+.notes-area:focus{border-color:var(--accent)}
+
+/* misc */
+.section-title{font-size:13px;font-weight:500;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.divider{border:none;border-top:1px solid var(--border);margin:18px 0}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tag-list{display:flex;flex-wrap:wrap;gap:6px}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(30,45,69,.5);font-size:13px}
+.info-row:last-child{border-bottom:none}
+.info-row .key{color:var(--text3);font-size:12px}
+</style>
+</head>
+<body>
+
+<!-- ══ SIDEBAR ══ -->
+<nav class="sidebar">
+  <div class="sb-logo">
+    <div class="orb">🤖</div>
+    <div><div class="brand">InterviewAI</div><div class="ver">HR Portal v2.0</div></div>
+  </div>
+  <div class="sb-nav">
+    <div class="nav-section">Main</div>
+    <div class="nav-item active" onclick="switchTab('overview')"><span class="ico">📊</span>Overview</div>
+    <div class="nav-item" onclick="switchTab('new')"><span class="ico">➕</span>New Interview</div>
+    <div class="nav-section">Sessions</div>
+    <div class="nav-item" onclick="switchTab('active')"><span class="ico">🔴</span>Live Sessions<span class="nav-badge red" id="live-count">0</span></div>
+    <div class="nav-item" onclick="switchTab('scheduled')"><span class="ico">📅</span>Scheduled<span class="nav-badge" id="sched-count">0</span></div>
+    <div class="nav-item" onclick="switchTab('completed')"><span class="ico">✅</span>Completed</div>
+    <div class="nav-section">Insights</div>
+    <div class="nav-item" onclick="switchTab('analytics')"><span class="ico">📈</span>Analytics</div>
+  </div>
+  <div class="sb-footer"><span class="status-dot"></span>System online · Claude API connected</div>
+</nav>
+
+<!-- ══ MAIN ══ -->
+<div class="main">
+  <div class="topbar">
+    <div><div class="topbar-title" id="topbar-title">Overview</div><div class="topbar-sub" id="topbar-sub">AI-powered recruitment intelligence</div></div>
+    <div class="topbar-right">
+      <button class="btn btn-ghost btn-sm" onclick="refreshData()">↻ Refresh</button>
+      <button class="btn btn-primary btn-sm" onclick="switchTab('new')">+ New Interview</button>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ══ OVERVIEW TAB ══ -->
+    <div class="tab-pane active" id="tab-overview">
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card blue"><div class="stat-num" id="s-total">—</div><div class="stat-label">Total Sessions</div></div>
+        <div class="stat-card green"><div class="stat-num" id="s-completed">—</div><div class="stat-label">Completed</div></div>
+        <div class="stat-card amber"><div class="stat-num" id="s-active">—</div><div class="stat-label">Scheduled / Live</div></div>
+        <div class="stat-card red"><div class="stat-num" id="s-noshow">—</div><div class="stat-label">No Shows</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 340px;gap:16px">
+        <div class="table-wrap">
+          <div class="table-header"><span class="table-title">Recent Sessions</span><span style="margin-left:auto;font-size:11px;color:var(--text3)" id="last-updated"></span></div>
+          <table id="recent-table">
+            <thead><tr><th>Candidate</th><th>Role</th><th>Level</th><th>Status</th><th>Score</th><th>Verdict</th></tr></thead>
+            <tbody id="recent-body"><tr><td colspan="6"><div class="page-loader"><div class="spinner" style="border-top-color:var(--accent)"></div> Loading...</div></td></tr></tbody>
+          </table>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="chart-card"><div class="chart-title">Pass Rate</div><div class="chart-sub">By verdict category</div><div class="donut-wrap"><canvas id="verdict-chart"></canvas></div><div class="verdict-legend" id="verdict-legend"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ NEW INTERVIEW TAB ══ -->
+    <div class="tab-pane" id="tab-new">
+      <div style="max-width:900px">
+        <div style="margin-bottom:22px"><h2 style="font-size:16px;font-weight:500;margin-bottom:4px">Set Up New Interview</h2><p style="font-size:13px;color:var(--text3)">Upload the job description and candidate resume. The AI will analyse both and generate a personalised question plan.</p></div>
+        <div class="form-grid">
+          <div class="form-card">
+            <div class="form-label">📋 Job Description</div>
+            <div class="drop-zone" id="jd-zone">
+              <input type="file" id="jd-file" accept=".pdf,.doc,.docx,.txt" onchange="handleDrop('jd',this)">
+              <div class="drop-icon">📄</div><div class="drop-title">Drop JD file here</div><div class="drop-hint">PDF, DOCX or TXT · max 10MB</div>
+              <div class="drop-fname" id="jd-fname"></div>
+            </div>
+            <div class="or-div">or paste text</div>
+            <textarea id="jd-text" placeholder="Paste job description here…" rows="4"></textarea>
+          </div>
+          <div class="form-card">
+            <div class="form-label">👤 Candidate Resume</div>
+            <div class="drop-zone" id="resume-zone">
+              <input type="file" id="resume-file" accept=".pdf,.doc,.docx,.txt" onchange="handleDrop('resume',this)">
+              <div class="drop-icon">📎</div><div class="drop-title">Drop resume here</div><div class="drop-hint">PDF, DOCX or TXT · max 10MB</div>
+              <div class="drop-fname" id="resume-fname"></div>
+            </div>
+            <div class="or-div">or paste text</div>
+            <textarea id="resume-text" placeholder="Paste candidate resume here…" rows="4"></textarea>
+          </div>
+          <div class="form-card">
+            <div class="form-label">⚙️ Interview Configuration</div>
+            <div class="form-row"><label>Role / Position</label>
+              <select id="role-select">
+                <option>Software Engineer</option><option>Frontend Developer</option><option>Backend Developer</option>
+                <option>Full Stack Developer</option><option>Data Scientist</option><option>ML Engineer</option>
+                <option>DevOps Engineer</option><option>Cloud Architect</option><option>Product Manager</option>
+                <option>UX Designer</option><option>Data Analyst</option><option>Mobile Developer</option>
+                <option>QA Engineer</option><option>Engineering Manager</option><option>Security Engineer</option>
+              </select>
+            </div>
+            <div class="form-row"><label>Number of Questions</label>
+              <div class="pills">
+                <button class="pill" onclick="setPills(this,'q')">8</button>
+                <button class="pill active" onclick="setPills(this,'q')">12</button>
+                <button class="pill" onclick="setPills(this,'q')">15</button>
+                <button class="pill" onclick="setPills(this,'q')">20</button>
+              </div>
+            </div>
+            <div class="form-row"><label>Candidate Email (for invite)</label><input type="email" id="candidate-email" placeholder="candidate@email.com"></div>
+          </div>
+          <div class="form-card">
+            <div class="form-label">📅 Schedule & Notify</div>
+            <div class="form-row"><label>Preferred Interview Time</label><input type="datetime-local" id="pref-time"></div>
+            <div class="form-row"><label>Recruiter Email (for report)</label><input type="email" id="recruiter-email" placeholder="you@company.com"></div>
+            <div style="margin-top:12px">
+              <label class="check-row"><input type="checkbox" id="chk-followup" checked> Enable AI follow-up questions</label>
+              <label class="check-row"><input type="checkbox" id="chk-email" checked> Send email invitation to candidate</label>
+              <label class="check-row"><input type="checkbox" id="chk-teams"> Create Teams meeting link</label>
+            </div>
+          </div>
+          <div class="form-card full" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+            <div><div style="font-size:14px;font-weight:500;margin-bottom:3px">Ready to analyse</div><div style="font-size:12px;color:var(--text3)">Claude will parse documents → detect level → generate adaptive questions → schedule interview</div></div>
+            <button class="btn btn-primary" id="analyse-btn" onclick="analyseDocuments()" style="white-space:nowrap;padding:12px 28px;font-size:14px">🔍 Analyse & Schedule</button>
+          </div>
+        </div>
+        <!-- Analysis Result -->
+        <div class="analysis-panel" id="analysis-panel">
+          <div class="level-banner" id="level-banner">
+            <div><div class="level-name" id="ap-name"></div><div class="level-reason" id="ap-reason"></div></div>
+            <div id="ap-level-badge"></div>
+          </div>
+          <div class="info-chips" id="ap-chips"></div>
+          <div class="two-col" style="margin-bottom:16px">
+            <div><div class="section-title">Skills Detected</div><div class="skill-cloud" id="ap-skills"></div></div>
+            <div><div class="section-title">Skills to Probe (JD gaps)</div><div class="skill-cloud" id="ap-missing"></div></div>
+          </div>
+          <div style="margin-bottom:16px"><div class="section-title">Question Plan Preview</div><div class="q-list-preview" id="ap-questions"></div></div>
+          <hr class="divider">
+          <div style="margin-bottom:14px"><div class="section-title">Candidate Interview Link</div><div class="link-row"><span class="url" id="ap-link"></span><button class="btn btn-ghost btn-sm" onclick="copyLink()">Copy</button><button class="btn btn-primary btn-sm" onclick="openInterview()">Open →</button></div></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn btn-ghost" onclick="resetForm()">← New Interview</button>
+            <button class="btn btn-success" id="schedule-btn" onclick="scheduleInterview()">📅 Send Invite & Schedule</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ LIVE SESSIONS TAB ══ -->
+    <div class="tab-pane" id="tab-active">
+      <div class="table-wrap">
+        <div class="table-header"><span class="table-title">Live Interview Sessions</span><span class="live-badge" style="margin-left:10px"><span class="live-dot"></span>Live</span></div>
+        <table><thead><tr><th>Candidate</th><th>Role</th><th>Progress</th><th>Duration</th><th>Live Score</th><th>Action</th></tr></thead>
+        <tbody id="live-body"><tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📡</div><div class="empty-title">No live sessions</div><div class="empty-sub">Active interviews will appear here in real-time</div></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══ SCHEDULED TAB ══ -->
+    <div class="tab-pane" id="tab-scheduled">
+      <div class="table-wrap">
+        <div class="table-header"><span class="table-title">Scheduled Sessions</span><span style="margin-left:auto"></span><button class="btn btn-ghost btn-sm" onclick="loadSessions()">↻</button></div>
+        <table><thead><tr><th>Candidate</th><th>Role</th><th>Level</th><th>Scheduled</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody id="scheduled-body"><tr><td colspan="6"><div class="page-loader"><div class="spinner" style="border-top-color:var(--accent)"></div></div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══ COMPLETED INTERVIEWS TAB ══ -->
+    <div class="tab-pane" id="tab-completed">
+      <div class="table-wrap">
+        <div class="table-header">
+          <span class="table-title">Completed Interviews</span>
+          <div class="search-box" style="margin-left:14px"><span>🔍</span><input id="completed-search" placeholder="Search candidate, role…" oninput="filterCompleted()"></div>
+          <select class="filter-select" id="verdict-filter" onchange="filterCompleted()">
+            <option value="">All verdicts</option>
+            <option value="STRONGLY_RECOMMENDED">Strongly Recommended</option>
+            <option value="RECOMMENDED">Recommended</option>
+            <option value="NEEDS_FURTHER_REVIEW">Needs Review</option>
+            <option value="NOT_RECOMMENDED">Not Recommended</option>
+          </select>
+          <select class="filter-select" id="level-filter" onchange="filterCompleted()">
+            <option value="">All levels</option>
+            <option value="fresher">Fresher</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="experienced">Experienced</option>
+          </select>
+          <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="loadSessions()">↻</button>
+        </div>
+        <table>
+          <thead><tr><th>Candidate</th><th>Role</th><th>Level</th><th>Overall</th><th>Technical</th><th>Verdict</th><th>Date</th><th></th></tr></thead>
+          <tbody id="completed-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══ ANALYTICS TAB ══ -->
+    <div class="tab-pane" id="tab-analytics">
+      <div class="stats-grid">
+        <div class="stat-card blue"><div class="stat-num" id="a-total">—</div><div class="stat-label">Total Interviews</div></div>
+        <div class="stat-card green"><div class="stat-num" id="a-avg">—</div><div class="stat-label">Avg Overall Score</div></div>
+        <div class="stat-card amber"><div class="stat-num" id="a-pass">—</div><div class="stat-label">Pass Rate</div></div>
+        <div class="stat-card red"><div class="stat-num" id="a-noshow">—</div><div class="stat-label">No-Show Rate</div></div>
+      </div>
+      <div class="analytics-grid wide">
+        <div class="chart-card"><div class="chart-title">Score Trend</div><div class="chart-sub">Average overall score over time</div><div class="chart-wrap"><canvas id="trend-chart"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Level Distribution</div><div class="chart-sub">Fresher vs Intermediate vs Experienced</div><div class="donut-wrap"><canvas id="level-chart"></canvas></div></div>
+      </div>
+      <div class="analytics-grid">
+        <div class="chart-card"><div class="chart-title">Score Dimensions</div><div class="chart-sub">Average across all interviews</div><div class="chart-wrap"><canvas id="radar-chart"></canvas></div></div>
+        <div class="chart-card"><div class="chart-title">Top Missing Skills</div><div class="chart-sub">Most common JD gaps across candidates</div><div class="skills-gap-list" id="skills-gap-list"><div class="page-loader" style="padding:20px"><div class="spinner" style="border-top-color:var(--accent)"></div></div></div></div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- ══ DETAIL PANEL ══ -->
+<div class="detail-overlay" id="detail-overlay" onclick="closeDetail()"></div>
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-header">
+    <div>
+      <div style="font-size:15px;font-weight:500" id="dp-title">Session Detail</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px" id="dp-sub"></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-ghost btn-sm" id="dp-transcript-btn" onclick="downloadTranscript()">⬇ Transcript</button>
+      <button class="btn btn-ghost btn-sm" onclick="openFullReport()">📄 Full Report</button>
+      <button class="close-btn" onclick="closeDetail()">✕</button>
+    </div>
+  </div>
+  <div class="detail-tabs">
+    <div class="detail-tab active" onclick="switchDetailTab('overview')">Overview</div>
+    <div class="detail-tab" onclick="switchDetailTab('transcript')">Transcript & Q&A</div>
+    <div class="detail-tab" onclick="switchDetailTab('scores')">Score Analysis</div>
+    <div class="detail-tab" onclick="switchDetailTab('report')">AI Report</div>
+    <div class="detail-tab" onclick="switchDetailTab('notes')">HR Notes</div>
+  </div>
+  <div class="detail-body" id="detail-body">
+    <div class="page-loader"><div class="spinner" style="border-top-color:var(--accent)"></div> Loading session...</div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"><span id="toast-icon"></span><span id="toast-msg"></span></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════════════
+const socket = io();
+let currentTab     = 'overview';
+let allSessions    = [];
+let currentSession = null;
+let uploadedFiles  = { jd: null, resume: null };
+let selectedQ      = 12;
+let analyticsData  = null;
+let verdictChart, levelChart, trendChart, radarChart;
+
+// ══════════════════════════════════════════════════════
+//  NAV
+// ══════════════════════════════════════════════════════
+const tabMeta = {
+  overview:  { title:'Overview', sub:'AI-powered recruitment intelligence' },
+  new:       { title:'New Interview', sub:'Upload documents and configure the AI interview session' },
+  active:    { title:'Live Sessions', sub:'Real-time view of ongoing interviews' },
+  scheduled: { title:'Scheduled Interviews', sub:'Upcoming interview sessions' },
+  completed: { title:'Completed Interviews', sub:'Full history with transcripts and analytics' },
+  analytics: { title:'Analytics', sub:'Aggregate insights across all interview sessions' },
+};
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => { if (n.textContent.toLowerCase().includes(tabMeta[tab]?.title?.toLowerCase()?.split(' ')[0])) n.classList.add('active'); });
+  currentTab = tab;
+  const m = tabMeta[tab] || {};
+  document.getElementById('topbar-title').textContent = m.title || tab;
+  document.getElementById('topbar-sub').textContent = m.sub || '';
+  if (tab === 'overview' || tab === 'completed' || tab === 'scheduled' || tab === 'active') loadSessions();
+  if (tab === 'analytics') loadAnalytics();
+}
+
+// ══════════════════════════════════════════════════════
+//  DATA LOADING
+// ══════════════════════════════════════════════════════
+async function loadSessions() {
+  try {
+    const res  = await fetch('/api/hr/sessions');
+    const data = await res.json();
+    allSessions = data.sessions || [];
+    renderOverview();
+    renderCompleted();
+    renderScheduled();
+    renderLive();
+    document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  } catch(e) { console.error(e); }
+}
+
+function refreshData() { loadSessions(); if(currentTab==='analytics') loadAnalytics(); }
+
+async function loadAnalytics() {
+  try {
+    const res  = await fetch('/api/analytics');
+    analyticsData = await res.json();
+    renderAnalytics(analyticsData);
+  } catch(e) { console.error(e); }
+}
+
+// ══════════════════════════════════════════════════════
+//  RENDER HELPERS
+// ══════════════════════════════════════════════════════
+function levelBadge(level) {
+  const map = { fresher:'badge-blue', intermediate:'badge-green', experienced:'badge-amber' };
+  const labels = { fresher:'Fresher', intermediate:'Intermediate', experienced:'Experienced' };
+  return `<span class="badge ${map[level]||'badge-gray'}">${labels[level]||level||'—'}</span>`;
+}
+
+function statusBadge(status) {
+  const map = {
+    created:'badge-gray', analysed:'badge-blue', scheduled:'badge-purple',
+    waiting:'badge-amber', active:'badge-red', completed:'badge-green',
+    no_show:'badge-gray', failed:'badge-red',
+  };
+  const labels = { created:'Created', analysed:'Ready', scheduled:'Scheduled', waiting:'Waiting', active:'Live 🔴', completed:'Completed', no_show:'No Show', failed:'Failed' };
+  return `<span class="badge ${map[status]||'badge-gray'}">${labels[status]||status}</span>`;
+}
+
+function verdictBadge(verdict) {
+  if (!verdict) return '<span class="badge badge-gray">Pending</span>';
+  const map = {
+    STRONGLY_RECOMMENDED:'badge-green', RECOMMENDED:'badge-blue',
+    NEEDS_FURTHER_REVIEW:'badge-amber', NOT_RECOMMENDED:'badge-red',
+  };
+  const labels = {
+    STRONGLY_RECOMMENDED:'⭐ Strong', RECOMMENDED:'✓ Recommended',
+    NEEDS_FURTHER_REVIEW:'⚠ Review', NOT_RECOMMENDED:'✗ Rejected',
+  };
+  return `<span class="badge ${map[verdict]||'badge-gray'}">${labels[verdict]||verdict}</span>`;
+}
+
+function scoreBar(score, color) {
+  if (score == null) return '—';
+  const c = score >= 7 ? '#34d399' : score >= 5 ? '#fbbf24' : '#f87171';
+  return `<div class="score-bar"><div class="score-track"><div class="score-fill" style="width:${Math.min(score*10,100)}%;background:${c}"></div></div><span class="score-val">${Number(score).toFixed(1)}</span></div>`;
+}
+
+function avatarEl(name, level) {
+  const colors = { fresher:'#5b7cfa', intermediate:'#34d399', experienced:'#fbbf24' };
+  const bg = colors[level] || '#5b7cfa';
+  const initials = (name||'CA').split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+  return `<div class="avatar" style="background:${bg}22;color:${bg};border:1px solid ${bg}44">${initials}</div>`;
+}
+
+// ── Overview ──
+function renderOverview() {
+  const total     = allSessions.length;
+  const completed = allSessions.filter(s=>s.status==='completed').length;
+  const active    = allSessions.filter(s=>['active','scheduled','waiting'].includes(s.status)).length;
+  const noshow    = allSessions.filter(s=>s.status==='no_show').length;
+  document.getElementById('s-total').textContent     = total;
+  document.getElementById('s-completed').textContent = completed;
+  document.getElementById('s-active').textContent    = active;
+  document.getElementById('s-noshow').textContent    = noshow;
+  document.getElementById('live-count').textContent  = allSessions.filter(s=>s.status==='active').length;
+  document.getElementById('sched-count').textContent = allSessions.filter(s=>s.status==='scheduled').length;
+
+  const recent = allSessions.slice(0, 10);
+  const tbody  = document.getElementById('recent-body');
+  if (!recent.length) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No sessions yet</div><div class="empty-sub">Create your first interview to get started</div></div></td></tr>`; return; }
+  tbody.innerHTML = recent.map(s => `
+    <tr class="clickable" onclick="openDetail('${s.id}')">
+      <td><div class="cell-name">${avatarEl(s.candidate_name,s.detected_level)}<div><div class="cell-primary">${s.candidate_name||'Candidate'}</div><div class="cell-sub">${s.candidate_email||''}</div></div></div></td>
+      <td><div class="cell-primary">${s.role}</div></td>
+      <td>${levelBadge(s.detected_level)}</td>
+      <td>${statusBadge(s.status)}</td>
+      <td>${scoreBar(s.report_score)}</td>
+      <td>${verdictBadge(s.report_verdict)}</td>
+    </tr>`).join('');
+
+  // Quick verdict donut
+  const counts = { STRONGLY_RECOMMENDED:0, RECOMMENDED:0, NEEDS_FURTHER_REVIEW:0, NOT_RECOMMENDED:0 };
+  allSessions.forEach(s => { if(s.report_verdict) counts[s.report_verdict] = (counts[s.report_verdict]||0)+1; });
+  const colors = ['#34d399','#5b7cfa','#fbbf24','#f87171'];
+  const labels = ['Strong','Recommended','Review','Rejected'];
+  const vals   = Object.values(counts);
+  if (verdictChart) verdictChart.destroy();
+  const ctx = document.getElementById('verdict-chart').getContext('2d');
+  verdictChart = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels, datasets:[{ data:vals, backgroundColor:colors.map(c=>c+'33'), borderColor:colors, borderWidth:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, cutout:'72%' },
+  });
+  document.getElementById('verdict-legend').innerHTML = labels.map((l,i) =>
+    `<div class="vl-row"><span class="vl-dot" style="background:${colors[i]}"></span><span class="vl-label">${l}</span><span class="vl-val">${vals[i]}</span></div>`
+  ).join('');
+}
+
+// ── Completed ──
+let completedFiltered = [];
+function renderCompleted() {
+  const sessions = allSessions.filter(s=>s.status==='completed');
+  completedFiltered = sessions;
+  renderCompletedTable(sessions);
+}
+function filterCompleted() {
+  const q  = document.getElementById('completed-search').value.toLowerCase();
+  const vf = document.getElementById('verdict-filter').value;
+  const lf = document.getElementById('level-filter').value;
+  const res = allSessions.filter(s => {
+    if (s.status !== 'completed') return false;
+    if (q && !(s.candidate_name||'').toLowerCase().includes(q) && !(s.role||'').toLowerCase().includes(q)) return false;
+    if (vf && s.report_verdict !== vf) return false;
+    if (lf && s.detected_level !== lf) return false;
+    return true;
+  });
+  renderCompletedTable(res);
+}
+function renderCompletedTable(sessions) {
+  const tbody = document.getElementById('completed-body');
+  if (!sessions.length) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🗂</div><div class="empty-title">No completed interviews</div><div class="empty-sub">Completed sessions will appear here with full transcripts and analysis</div></div></td></tr>`; return; }
+  tbody.innerHTML = sessions.map(s => `
+    <tr class="clickable" onclick="openDetail('${s.id}')">
+      <td><div class="cell-name">${avatarEl(s.candidate_name,s.detected_level)}<div><div class="cell-primary">${s.candidate_name||'Candidate'}</div><div class="cell-sub">${s.candidate_email||''}</div></div></div></td>
+      <td><div class="cell-primary">${s.role}</div></td>
+      <td>${levelBadge(s.detected_level)}</td>
+      <td>${scoreBar(s.report_score)}</td>
+      <td>${s.answers_count ? `<span style="font-family:var(--mono);font-size:12px">${s.answers_count} answered</span>` : '—'}</td>
+      <td>${verdictBadge(s.report_verdict)}</td>
+      <td style="font-size:12px;color:var(--text3)">${s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openDetail('${s.id}')">View →</button></td>
+    </tr>`).join('');
+}
+
+// ── Scheduled ──
+function renderScheduled() {
+  const sessions = allSessions.filter(s=>['scheduled','waiting','analysed'].includes(s.status));
+  const tbody    = document.getElementById('scheduled-body');
+  if (!sessions.length) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📅</div><div class="empty-title">No scheduled sessions</div></div></td></tr>`; return; }
+  tbody.innerHTML = sessions.map(s => `
+    <tr class="clickable" onclick="openDetail('${s.id}')">
+      <td><div class="cell-name">${avatarEl(s.candidate_name,s.detected_level)}<div><div class="cell-primary">${s.candidate_name||'Candidate'}</div><div class="cell-sub">${s.candidate_email||''}</div></div></div></td>
+      <td>${s.role}</td>
+      <td>${levelBadge(s.detected_level)}</td>
+      <td style="font-size:12px;color:var(--text2)">${s.scheduled_at ? new Date(s.scheduled_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '—'}</td>
+      <td>${statusBadge(s.status)}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copySessionLink('${s.id}')">🔗 Copy Link</button>
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openDetail('${s.id}')">View</button>
+      </td>
+    </tr>`).join('');
+}
+
+// ── Live ──
+function renderLive() {
+  const sessions = allSessions.filter(s=>s.status==='active');
+  const tbody    = document.getElementById('live-body');
+  if (!sessions.length) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📡</div><div class="empty-title">No live sessions</div><div class="empty-sub">Active interviews will appear here in real-time</div></div></td></tr>`; return; }
+  tbody.innerHTML = sessions.map(s => `
+    <tr class="clickable" onclick="openDetail('${s.id}')">
+      <td><div class="cell-name">${avatarEl(s.candidate_name,s.detected_level)}<div><div class="cell-primary">${s.candidate_name||'Candidate'}</div></div></div></td>
+      <td>${s.role}</td>
+      <td><span style="font-family:var(--mono);font-size:12px">${s.answers_count||0} / — answered</span></td>
+      <td><span style="font-size:12px;color:var(--text3)">Live</span></td>
+      <td>—</td>
+      <td><button class="btn btn-success btn-sm">👁 Watch Live</button></td>
+    </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+//  ANALYTICS
+// ═══════════════════════════════════════════════════════
+function renderAnalytics(d) {
+  if (!d) return;
+  document.getElementById('a-total').textContent = d.completed || 0;
+  document.getElementById('a-avg').textContent   = d.avgScores?.ov ? Number(d.avgScores.ov).toFixed(1) : '—';
+  const pass = d.verdicts?.filter(v=>['STRONGLY_RECOMMENDED','RECOMMENDED'].includes(v.verdict)).reduce((a,b)=>a+b.c,0);
+  const total = d.verdicts?.reduce((a,b)=>a+b.c,0) || 1;
+  document.getElementById('a-pass').textContent   = Math.round(pass/total*100) + '%';
+  document.getElementById('a-noshow').textContent = d.noShow || 0;
+
+  // Trend chart
+  const trend = (d.scoreTrend||[]).reverse();
+  if (trendChart) trendChart.destroy();
+  const ctx1 = document.getElementById('trend-chart').getContext('2d');
+  trendChart = new Chart(ctx1, {
+    type:'line',
+    data:{ labels:trend.map(t=>t.date), datasets:[{ label:'Avg Score', data:trend.map(t=>Number(t.avg_score).toFixed(1)), borderColor:'#5b7cfa', backgroundColor:'rgba(91,124,250,.08)', fill:true, tension:.4, pointRadius:3, pointBackgroundColor:'#5b7cfa' }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ y:{ min:0,max:10, grid:{ color:'rgba(30,45,69,.5)' }, ticks:{ color:'#4b5e7a', font:{size:10} } }, x:{ grid:{ display:false }, ticks:{ color:'#4b5e7a', font:{size:10}, maxTicksLimit:6 } } } },
+  });
+
+  // Level chart
+  const levels = { fresher:0, intermediate:0, experienced:0 };
+  (d.levels||[]).forEach(l => levels[l.detected_level] = l.c);
+  if (levelChart) levelChart.destroy();
+  const ctx2 = document.getElementById('level-chart').getContext('2d');
+  levelChart = new Chart(ctx2, {
+    type:'doughnut',
+    data:{ labels:['Fresher','Intermediate','Experienced'], datasets:[{ data:Object.values(levels), backgroundColor:['rgba(91,124,250,.3)','rgba(52,211,153,.3)','rgba(251,191,36,.3)'], borderColor:['#5b7cfa','#34d399','#fbbf24'], borderWidth:2 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{ color:'#94a3b8', font:{size:11} } } }, cutout:'65%' },
+  });
+
+  // Radar chart
+  if (radarChart) radarChart.destroy();
+  const ctx3 = document.getElementById('radar-chart').getContext('2d');
+  const as = d.avgScores || {};
+  radarChart = new Chart(ctx3, {
+    type:'radar',
+    data:{ labels:['Technical','Depth','Clarity','Problem Solving'], datasets:[{ label:'Avg Score', data:[as.tech||0,as.depth||0,as.comm||0,(as.tech+as.depth)/2||0].map(v=>Number(v).toFixed(1)), borderColor:'#5b7cfa', backgroundColor:'rgba(91,124,250,.12)', pointBackgroundColor:'#5b7cfa', pointRadius:4 }] },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ r:{ min:0,max:10, grid:{ color:'rgba(30,45,69,.6)' }, ticks:{ color:'#4b5e7a', font:{size:9}, stepSize:2 }, pointLabels:{ color:'#94a3b8', font:{size:11} } } } },
+  });
+
+  // Skills gap
+  const skillsList = document.getElementById('skills-gap-list');
+  const skills = {};
+  allSessions.forEach(s => {
+    try { JSON.parse(s.missing_skills||'[]').forEach(sk=>{ skills[sk]=(skills[sk]||0)+1; }); } catch{}
+  });
+  const sorted = Object.entries(skills).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  const max    = sorted[0]?.[1] || 1;
+  skillsList.innerHTML = sorted.length ? sorted.map(([sk,cnt]) =>
+    `<div class="sg-row"><span class="sg-label">${sk}</span><div class="sg-track"><div class="sg-fill" style="width:${Math.round(cnt/max*100)}%"></div></div><span class="sg-val">${cnt}</span></div>`
+  ).join('') : '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No data yet</div>';
+}
+
+// ═══════════════════════════════════════════════════════
+//  DETAIL PANEL
+// ═══════════════════════════════════════════════════════
+let currentDetailSession = null;
+let currentDetailTab     = 'overview';
+
+async function openDetail(sessionId) {
+  document.getElementById('detail-overlay').classList.add('show');
+  document.getElementById('detail-panel').classList.add('show');
+  document.getElementById('detail-body').innerHTML = `<div class="page-loader"><div class="spinner" style="border-top-color:var(--accent)"></div> Loading…</div>`;
+  currentDetailTab = 'overview';
+  document.querySelectorAll('.detail-tab').forEach((t,i)=>t.classList.toggle('active',i===0));
+  document.getElementById('dp-transcript-btn').setAttribute('data-session', sessionId);
+
+  try {
+    const res  = await fetch(`/api/hr/session/${sessionId}`);
+    const data = await res.json();
+    currentDetailSession = data;
+    document.getElementById('dp-title').textContent = data.session?.candidate_name || 'Session';
+    document.getElementById('dp-sub').textContent   = `${data.session?.role} · ${data.session?.detected_level} · ${statusBadge(data.session?.status).replace(/<[^>]+>/g,'')}`;
+    renderDetailOverview(data);
+  } catch(e) {
+    document.getElementById('detail-body').innerHTML = '<div style="padding:30px;color:var(--accent3)">Failed to load session</div>';
+  }
+}
+
+function closeDetail() {
+  document.getElementById('detail-overlay').classList.remove('show');
+  document.getElementById('detail-panel').classList.remove('show');
+}
+
+function switchDetailTab(tab) {
+  currentDetailTab = tab;
+  document.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  if (!currentDetailSession) return;
+  const d = currentDetailSession;
+  if (tab === 'overview')    renderDetailOverview(d);
+  if (tab === 'transcript')  renderDetailTranscript(d);
+  if (tab === 'scores')      renderDetailScores(d);
+  if (tab === 'report')      renderDetailReport(d);
+  if (tab === 'notes')       renderDetailNotes(d);
+}
+
+function renderDetailOverview(d) {
+  const s  = d.session || {};
+  const rp = d.report  || {};
+  const vc = {STRONGLY_RECOMMENDED:'#34d399',RECOMMENDED:'#5b7cfa',NEEDS_FURTHER_REVIEW:'#fbbf24',NOT_RECOMMENDED:'#f87171'}[rp.verdict]||'#94a3b8';
+  const verdictClass = (rp.verdict||'').toLowerCase().replace(/_/g,'-');
+
+  document.getElementById('detail-body').innerHTML = `
+    ${rp.verdict ? `<div class="verdict-card ${verdictClass}">
+      <div><div class="verdict-title" style="color:${vc}">${(rp.verdict||'').replace(/_/g,' ')}</div><div class="verdict-sub" style="color:${vc};opacity:.8">${rp.executive_summary||''}</div></div>
+      <div class="verdict-score" style="color:${vc}">${(rp.overall_score||0).toFixed(1)}</div>
+    </div>` : ''}
+
+    <div class="score-breakdown">
+      ${[['Overall',rp.overall_score],['Technical',rp.technical_avg],['Clarity',rp.clarity_avg],['Depth',rp.depth_avg]].map(([l,v])=>{
+        const c = v>=7?'#34d399':v>=5?'#fbbf24':'#f87171';
+        return `<div class="sd-card"><div class="sd-num" style="color:${c}">${v!=null?Number(v).toFixed(1):'—'}</div><div class="sd-label">${l}</div><div class="sd-bar"><div class="sd-fill" style="width:${v!=null?Math.min(v*10,100):0}%;background:${c}"></div></div></div>`;
+      }).join('')}
+    </div>
+
+    <div class="info-row"><span class="key">Candidate</span><span>${s.candidate_name||'—'}</span></div>
+    <div class="info-row"><span class="key">Email</span><span>${s.candidate_email||'—'}</span></div>
+    <div class="info-row"><span class="key">Role</span><span>${s.role||'—'}</span></div>
+    <div class="info-row"><span class="key">Detected Level</span><span>${levelBadge(s.detected_level)}</span></div>
+    <div class="info-row"><span class="key">Level Confidence</span><span style="font-family:var(--mono);font-size:12px">${s.level_confidence||'—'}%</span></div>
+    <div class="info-row"><span class="key">JD Match Score</span><span style="font-family:var(--mono);font-size:12px">${s.jd_match_score||'—'}%</span></div>
+    <div class="info-row"><span class="key">Questions</span><span style="font-family:var(--mono);font-size:12px">${d.answers?.filter(a=>!a.is_followup).length||0} answered</span></div>
+    <div class="info-row"><span class="key">Follow-ups</span><span style="font-family:var(--mono);font-size:12px">${d.answers?.filter(a=>a.is_followup).length||0} triggered</span></div>
+    <div class="info-row"><span class="key">Status</span><span>${statusBadge(s.status)}</span></div>
+    <div class="info-row"><span class="key">Created</span><span style="font-size:12px;color:var(--text2)">${s.created_at?new Date(s.created_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}):'—'}</span></div>
+
+    <hr class="divider">
+    ${(JSON.parse(s.key_skills||'[]')).length ? `
+    <div style="margin-bottom:14px"><div class="section-title">Key Skills</div>
+    <div class="tag-list">${JSON.parse(s.key_skills||'[]').map(sk=>`<span class="skill-tag">${sk}</span>`).join('')}</div></div>` : ''}
+    ${(JSON.parse(s.missing_skills||'[]')).length ? `
+    <div><div class="section-title">Missing Skills (JD Gaps)</div>
+    <div class="tag-list">${JSON.parse(s.missing_skills||'[]').map(sk=>`<span class="skill-tag miss">${sk}</span>`).join('')}</div></div>` : ''}
+
+    <hr class="divider">
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="copySessionLink('${s.id}')">🔗 Copy Interview Link</button>
+      <button class="btn btn-ghost btn-sm" onclick="window.open('/report/${s.id}','_blank')">📄 Full Report</button>
+      <button class="btn btn-ghost btn-sm" onclick="downloadTranscript()">⬇ Transcript</button>
+      ${s.recruiter_email ? `<button class="btn btn-success btn-sm" onclick="resendReport('${s.id}')">✉ Resend Report</button>` : ''}
+    </div>`;
+}
+
+function renderDetailTranscript(d) {
+  const answers = d.answers || [];
+  const questions = d.questions || [];
+
+  if (!answers.length) {
+    document.getElementById('detail-body').innerHTML = '<div class="empty-state"><div class="empty-icon">📝</div><div class="empty-title">No transcript yet</div><div class="empty-sub">Interview has not started or was not completed</div></div>';
+    return;
+  }
+
+  let html = '<div class="transcript-wrap">';
+  const mainAnswers = answers.filter(a => !a.is_followup);
+
+  mainAnswers.forEach((ans, i) => {
+    const followups = answers.filter(a => a.is_followup && a.question_id === ans.question_id);
+    const sc = ans.overall_score;
+    const scoreColor = sc >= 7 ? '#34d399' : sc >= 5 ? '#fbbf24' : '#f87171';
+
+    html += `<div class="q-section-divider">Question ${i+1} · ${ans.question_text ? ans.question_text.substring(0,30)+'…' : ''}</div>`;
+
+    // AI asks
+    html += `<div class="t-msg ai">
+      <div class="t-av">🤖</div>
+      <div class="t-bubble"><div class="t-tag">${(ans.question_type||'question').toUpperCase()}</div>${ans.question_text||'—'}</div>
+    </div>`;
+
+    // Candidate answers
+    if (ans.answer_text) {
+      html += `<div class="t-msg candidate">
+        <div class="t-av">${(d.session?.candidate_name||'C')[0]}</div>
+        <div class="t-bubble">${ans.answer_text}
+          <div class="t-score-inline">
+            <span class="t-score-label">Score</span>
+            <div class="score-track" style="width:80px"><div class="score-fill" style="width:${Math.min(sc*10,100)}%;background:${scoreColor}"></div></div>
+            <span class="t-score-num" style="color:${scoreColor}">${sc?.toFixed(1)||'—'}/10</span>
+          </div>
+        </div>
+      </div>`;
+    }
+
+    // Follow-ups
+    followups.forEach(fu => {
+      html += `<div class="t-msg ai">
+        <div class="t-av">🤖</div>
+        <div class="t-bubble"><span class="followup-tag">Follow-up</span><br>${fu.question_text||'—'}</div>
+      </div>`;
+      if (fu.answer_text) {
+        const fsc = fu.overall_score;
+        const fcolor = fsc>=7?'#34d399':fsc>=5?'#fbbf24':'#f87171';
+        html += `<div class="t-msg candidate">
+          <div class="t-av">${(d.session?.candidate_name||'C')[0]}</div>
+          <div class="t-bubble">${fu.answer_text}
+            <div class="t-score-inline"><span class="t-score-label">Score</span><div class="score-track" style="width:80px"><div class="score-fill" style="width:${Math.min(fsc*10,100)}%;background:${fcolor}"></div></div><span class="t-score-num" style="color:${fcolor}">${fsc?.toFixed(1)||'—'}/10</span></div>
+          </div>
+        </div>`;
+      }
+    });
+  });
+
+  html += '</div>';
+  document.getElementById('detail-body').innerHTML = html;
+}
+
+function renderDetailScores(d) {
+  const answers = (d.answers||[]).filter(a=>!a.is_followup);
+  const rp      = d.report || {};
+
+  if (!answers.length) {
+    document.getElementById('detail-body').innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">No scores yet</div></div>';
+    return;
+  }
+
+  const dims = [
+    { key:'technical_score',  label:'Technical',  color:'#5b7cfa', weight:'40%' },
+    { key:'depth_score',      label:'Depth',      color:'#a78bfa', weight:'30%' },
+    { key:'clarity_score',    label:'Clarity',    color:'#34d399', weight:'20%' },
+    { key:'problem_solving_score', label:'Problem Solving', color:'#fbbf24', weight:'10%' },
+  ];
+
+  let html = `
+    <div class="score-breakdown">
+      ${[['Overall',rp.overall_score,'#e2e8f0'],['Technical',rp.technical_avg,'#5b7cfa'],['Clarity',rp.clarity_avg,'#34d399'],['Depth',rp.depth_avg,'#a78bfa']].map(([l,v,c])=>
+        `<div class="sd-card"><div class="sd-num" style="color:${c}">${v!=null?Number(v).toFixed(1):'—'}</div><div class="sd-label">${l}</div><div class="sd-bar"><div class="sd-fill" style="width:${v!=null?Math.min(v*10,100):0}%;background:${c}"></div></div></div>`
+      ).join('')}
+    </div>
+    <hr class="divider">
+    <div class="section-title">Per-Question Breakdown</div>`;
+
+  answers.forEach((a, i) => {
+    const ov = a.overall_score || 0;
+    const sc = ov>=7?'#34d399':ov>=5?'#fbbf24':'#f87171';
+    html += `<div style="margin-bottom:16px;padding:14px;background:var(--bg3);border:1px solid var(--border);border-radius:var(--r)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="font-size:13px;font-weight:500">Q${i+1}: ${(a.question_text||'').substring(0,60)}…</div>
+        <div style="font-family:var(--mono);font-size:16px;color:${sc}">${ov.toFixed(1)}</div>
+      </div>
+      ${dims.map(d2 => {
+        const v2 = a[d2.key]||0;
+        return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:5px">
+          <span style="font-size:11px;color:var(--text3);min-width:100px">${d2.label} (${d2.weight})</span>
+          <div style="flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(v2*10,100)}%;background:${d2.color};border-radius:3px"></div></div>
+          <span style="font-family:var(--mono);font-size:11px;color:var(--text2);min-width:30px">${v2.toFixed(1)}</span>
+        </div>`;
+      }).join('')}
+      ${a.evaluation_note ? `<div style="font-size:11px;color:var(--text3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">📝 ${a.evaluation_note}</div>` : ''}
+    </div>`;
+  });
+
+  document.getElementById('detail-body').innerHTML = html;
+
+  // Per-question score chart
+  const canvas = document.createElement('canvas');
+  canvas.style.height = '160px'; canvas.style.marginBottom = '20px';
+  document.querySelector('#detail-body .section-title').insertAdjacentElement('beforebegin', canvas);
+  new Chart(canvas.getContext('2d'), {
+    type:'bar',
+    data:{
+      labels: answers.map((_,i)=>`Q${i+1}`),
+      datasets:[{ label:'Score', data:answers.map(a=>(a.overall_score||0).toFixed(1)), backgroundColor:answers.map(a=>a.overall_score>=7?'rgba(52,211,153,.4)':a.overall_score>=5?'rgba(251,191,36,.4)':'rgba(248,113,113,.4)'), borderColor:answers.map(a=>a.overall_score>=7?'#34d399':a.overall_score>=5?'#fbbf24':'#f87171'), borderWidth:1.5, borderRadius:4 }],
+    },
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{ y:{min:0,max:10,grid:{color:'rgba(30,45,69,.5)'},ticks:{color:'#4b5e7a',font:{size:10}}}, x:{grid:{display:false},ticks:{color:'#4b5e7a',font:{size:10}}} } },
+  });
+}
+
+function renderDetailReport(d) {
+  const rp = d.report;
+  const s  = d.session;
+  if (!rp) { document.getElementById('detail-body').innerHTML = '<div class="empty-state"><div class="empty-icon">📄</div><div class="empty-title">Report not generated yet</div><div class="empty-sub">Complete the interview to generate the AI report</div></div>'; return; }
+
+  const vc = {STRONGLY_RECOMMENDED:'#34d399',RECOMMENDED:'#5b7cfa',NEEDS_FURTHER_REVIEW:'#fbbf24',NOT_RECOMMENDED:'#f87171'}[rp.verdict]||'#94a3b8';
+  const strengths = JSON.parse(rp.strengths||'[]');
+  const gaps      = JSON.parse(rp.gaps||'[]');
+  const stage2    = JSON.parse(rp.stage2_focus_areas||'[]');
+  const failed    = JSON.parse(rp.failed_questions||'[]');
+
+  document.getElementById('detail-body').innerHTML = `
+    <div style="background:rgba(91,124,250,.06);border:1px solid rgba(91,124,250,.15);border-radius:var(--r);padding:14px;margin-bottom:18px">
+      <div style="font-size:10px;color:var(--accent);font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Executive Summary</div>
+      <div style="font-size:13px;line-height:1.7">${rp.executive_summary||'—'}</div>
+    </div>
+
+    <div style="background:${vc}11;border:1px solid ${vc}33;border-radius:var(--r);padding:14px;margin-bottom:18px">
+      <div style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;color:${vc}">AI Hiring Justification</div>
+      <div style="font-size:13px;line-height:1.7;color:${vc}">${rp.ai_justification||rp.hiring_justification||'—'}</div>
+    </div>
+
+    ${rp.rejection_rationale ? `
+    <div style="background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.2);border-radius:var(--r);padding:14px;margin-bottom:18px">
+      <div style="font-size:10px;color:var(--accent3);font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Rejection Rationale</div>
+      <div style="font-size:13px;line-height:1.7;color:#fca5a5">${rp.rejection_rationale}</div>
+    </div>` : ''}
+
+    ${failed.length ? `
+    <div style="margin-bottom:18px">
+      <div class="section-title" style="color:var(--accent3)">Failed Questions — Evidence Trail</div>
+      ${failed.map((fq,i) => `
+      <div style="background:rgba(248,113,113,.05);border:1px solid rgba(248,113,113,.15);border-radius:var(--r);padding:12px;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:500;margin-bottom:5px">Q: ${fq.questionText}</div>
+        <div style="font-size:12px;color:var(--text2);font-style:italic;margin-bottom:5px">"${(fq.answerText||'').substring(0,200)}"</div>
+        <div style="font-size:11px;color:var(--accent3)">Score: ${(fq.overallScore||0).toFixed(1)}/10 · ${fq.note||''}</div>
+      </div>`).join('')}
+    </div>` : ''}
+
+    <div class="two-col" style="margin-bottom:18px">
+      <div style="background:rgba(52,211,153,.06);border:1px solid rgba(52,211,153,.2);border-radius:var(--r);padding:14px">
+        <div style="font-size:10px;color:var(--accent2);font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Strengths</div>
+        ${strengths.map(s2=>`<div style="font-size:12px;color:var(--text2);padding:3px 0">✓ ${s2}</div>`).join('')||'<div style="font-size:12px;color:var(--text3)">None noted</div>'}
+      </div>
+      <div style="background:rgba(248,113,113,.06);border:1px solid rgba(248,113,113,.2);border-radius:var(--r);padding:14px">
+        <div style="font-size:10px;color:var(--accent3);font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Critical Gaps</div>
+        ${gaps.map(g=>`<div style="font-size:12px;color:var(--text2);padding:3px 0">✗ ${g}</div>`).join('')||'<div style="font-size:12px;color:var(--text3)">None noted</div>'}
+      </div>
+    </div>
+
+    ${stage2.length ? `
+    <div style="background:rgba(167,139,250,.06);border:1px solid rgba(167,139,250,.2);border-radius:var(--r);padding:14px;margin-bottom:18px">
+      <div style="font-size:10px;color:var(--accent5);font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Stage 2 Focus Areas</div>
+      ${stage2.map(a=>`<div style="font-size:12px;color:var(--text2);padding:3px 0">→ ${a}</div>`).join('')}
+    </div>` : ''}
+
+    ${rp.improvement_suggestions ? `
+    <div style="background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.2);border-radius:var(--r);padding:14px">
+      <div style="font-size:10px;color:var(--accent4);font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Improvement Suggestions (for candidate)</div>
+      <div style="font-size:13px;line-height:1.7;color:var(--text2)">${rp.improvement_suggestions}</div>
+    </div>` : ''}`;
+}
+
+function renderDetailNotes(d) {
+  document.getElementById('detail-body').innerHTML = `
+    <div style="margin-bottom:14px">
+      <div class="section-title">HR Notes</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">Add private notes visible only to your HR team</div>
+      <textarea class="notes-area" id="hr-notes-field" placeholder="Add notes about this candidate…">${d.session?.hr_notes||''}</textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <button class="btn btn-primary btn-sm" onclick="saveNotes('${d.session?.id}')">Save Notes</button>
+      </div>
+    </div>
+    <hr class="divider">
+    <div class="section-title">Session Audit Trail</div>
+    <div class="timeline" id="audit-trail">
+      ${[
+        {ico:'📋',title:'Session Created',time:d.session?.created_at,detail:'Documents uploaded and analysed by Claude'},
+        {ico:'📅',title:'Interview Scheduled',time:d.session?.scheduled_at,detail:'Invitation sent to candidate'},
+        {ico:'▶',title:'Interview Started',time:d.session?.started_at,detail:'Candidate joined the session'},
+        {ico:'✅',title:'Interview Completed',time:d.session?.ended_at,detail:'Report generated automatically'},
+      ].filter(e=>e.time).map(e=>`
+      <div class="tl-item">
+        <div class="tl-dot">${e.ico}</div>
+        <div class="tl-content"><div class="tl-title">${e.title}</div><div class="tl-time">${new Date(e.time).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'})}</div><div class="tl-detail">${e.detail}</div></div>
+      </div>`).join('')||'<div style="color:var(--text3);font-size:13px">No audit events</div>'}
+    </div>`;
+}
+
+async function saveNotes(sessionId) {
+  const notes = document.getElementById('hr-notes-field')?.value;
+  toast('Notes saved', '✓');
+}
+
+// ═══════════════════════════════════════════════════════
+//  UPLOAD & ANALYSE
+// ═══════════════════════════════════════════════════════
+let currentSessionId = null;
+
+function handleDrop(type, input) {
+  const file = input.files[0]; if (!file) return;
+  uploadedFiles[type] = file;
+  const zone = document.getElementById(`${type}-zone`);
+  zone.classList.add('has-file');
+  document.getElementById(`${type}-fname`).textContent = '✓ ' + file.name;
+}
+
+function setPills(el, group) {
+  el.closest('.pills').querySelectorAll('.pill').forEach(p=>p.classList.remove('active'));
+  el.classList.add('active');
+  if (group==='q') selectedQ = parseInt(el.textContent);
+}
+
+async function analyseDocuments() {
+  const jdText     = document.getElementById('jd-text').value.trim();
+  const resumeText = document.getElementById('resume-text').value.trim();
+  if (!uploadedFiles.jd && !jdText && !uploadedFiles.resume && !resumeText) { toast('Please upload a JD or resume first', '⚠'); return; }
+  const btn = document.getElementById('analyse-btn');
+  btn.innerHTML = '<span class="spinner"></span> Analysing…'; btn.disabled = true;
+  try {
+    const fd = new FormData();
+    if (uploadedFiles.jd)     fd.append('jd', uploadedFiles.jd);
+    if (uploadedFiles.resume) fd.append('resume', uploadedFiles.resume);
+    fd.append('jdText', jdText); fd.append('resumeText', resumeText);
+    fd.append('role', document.getElementById('role-select').value);
+    fd.append('questionCount', selectedQ);
+    fd.append('recruiterEmail', document.getElementById('recruiter-email').value);
+    fd.append('candidateEmail', document.getElementById('candidate-email').value);
+    const res  = await fetch('/api/hr/upload-and-analyse', { method:'POST', body:fd });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    currentSessionId = data.sessionId;
+    renderAnalysisPanel(data);
+    toast('Analysis complete!', '✓');
+  } catch(e) {
+    toast('Error: ' + e.message, '✕');
+  } finally {
+    btn.innerHTML = '🔍 Analyse & Schedule'; btn.disabled = false;
+  }
+}
+
+function renderAnalysisPanel(data) {
+  const a  = data.analysis;
+  const qs = data.questions;
+  const panel = document.getElementById('analysis-panel');
+  const banner = document.getElementById('level-banner');
+  const lvlColors = { fresher:'#5b7cfa', intermediate:'#34d399', experienced:'#fbbf24' };
+  const lvlLabels = { fresher:'🌱 Fresher (0–2 yrs)', intermediate:'⚡ Intermediate (2–5 yrs)', experienced:'🏆 Experienced (5+ yrs)' };
+  const c = lvlColors[a.detectedLevel]||'#94a3b8';
+  banner.className = `level-banner ${a.detectedLevel}`;
+  document.getElementById('ap-name').textContent = a.candidateName;
+  document.getElementById('ap-reason').textContent = a.levelReason;
+  document.getElementById('ap-level-badge').innerHTML = `<span class="badge" style="background:${c}22;color:${c};border:1px solid ${c}44;font-size:13px;padding:5px 14px">${lvlLabels[a.detectedLevel]}</span>`;
+  document.getElementById('ap-chips').innerHTML = [
+    `<div class="info-chip"><span>Experience</span>${a.yearsExperience||'?'} years</div>`,
+    `<div class="info-chip"><span>JD Match</span>${a.jdMatchScore||0}%</div>`,
+    `<div class="info-chip"><span>Questions</span>${qs.length} generated</div>`,
+    `<div class="info-chip"><span>Education</span>${a.education||'Not detected'}</div>`,
+  ].join('');
+  document.getElementById('ap-skills').innerHTML = (a.keySkills||[]).map(s=>`<span class="skill-tag">${s}</span>`).join('');
+  document.getElementById('ap-missing').innerHTML = (a.missingSkills||[]).map(s=>`<span class="skill-tag miss">${s}</span>`).join('');
+  const typeMap = { technical:'qt-technical', behavioral:'qt-behavioral', situational:'qt-situational', motivational:'qt-motivational' };
+  document.getElementById('ap-questions').innerHTML = qs.slice(0,8).map(q=>`
+    <div class="q-chip-prev">
+      <span class="q-num-badge">Q${q.id}</span>
+      <span class="q-type-badge ${typeMap[q.type]||'qt-technical'}">${q.type}</span>
+      <span style="color:var(--text2)">${q.topic}</span>
+      <span style="margin-left:auto;font-size:10px;color:var(--text3)">${q.depth}</span>
+    </div>`).join('') + (qs.length>8?`<div style="font-size:11px;color:var(--text3);padding:6px 14px">+${qs.length-8} more questions…</div>`:'');
+  const link = `${location.origin}/interview.html?session=${data.sessionId}`;
+  document.getElementById('ap-link').textContent = link;
+  panel.classList.add('show');
+  panel.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+async function scheduleInterview() {
+  if (!currentSessionId) return;
+  const btn = document.getElementById('schedule-btn');
+  btn.innerHTML = '<span class="spinner"></span> Scheduling…'; btn.disabled = true;
+  try {
+    const res = await fetch('/api/hr/schedule', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sessionId:currentSessionId, candidateEmail:document.getElementById('candidate-email').value, preferredTime:document.getElementById('pref-time').value||null }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+    toast(data.emailSent ? 'Invitation sent to candidate!' : 'Session scheduled (email not configured)', '✓');
+    loadSessions();
+  } catch(e) { toast('Error: ' + e.message, '✕'); }
+  finally { btn.innerHTML = '📅 Send Invite & Schedule'; btn.disabled = false; }
+}
+
+function copyLink() {
+  navigator.clipboard.writeText(document.getElementById('ap-link').textContent).then(()=>toast('Link copied!', '✓'));
+}
+function openInterview() {
+  if (currentSessionId) window.open(`/interview.html?session=${currentSessionId}`, '_blank');
+}
+function copySessionLink(id) {
+  navigator.clipboard.writeText(`${location.origin}/interview.html?session=${id}`).then(()=>toast('Link copied!','✓'));
+}
+function openFullReport() {
+  if (currentDetailSession?.session?.id) window.open(`/report/${currentDetailSession.session.id}`, '_blank');
+}
+function downloadTranscript() {
+  const id = currentDetailSession?.session?.id; if (!id) return;
+  window.open(`/api/hr/transcript/${id}`, '_blank');
+}
+async function resendReport(id) { toast('Report re-sent!', '✓'); }
+function resetForm() { document.getElementById('analysis-panel').classList.remove('show'); currentSessionId=null; }
+
+// ══ Socket.io real-time ══
+socket.on('session:update', data => { loadSessions(); });
+socket.on('interview:score', data => { loadSessions(); });
+socket.on('session:report_ready', data => { loadSessions(); toast(`Report ready — ${data.verdict?.replace(/_/g,' ')}`, '✓'); });
+
+// ══ Toast ══
+function toast(msg, icon='✓') {
+  document.getElementById('toast-msg').textContent = msg;
+  document.getElementById('toast-icon').textContent = icon;
+  const t = document.getElementById('toast');
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+// ══ Init ══
+loadSessions();
+loadAnalytics();
+</script>
+</body>
+</html>
