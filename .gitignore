@@ -5,3 +5,9 @@ reports/
 uploads/
 scratch/
 .DS_Store
+data/
+*.db
+*.db-shm
+*.db-wal
+test_*
+migrate.js

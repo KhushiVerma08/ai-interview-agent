@@ -17,7 +17,7 @@
   --r:10px;--r2:14px;
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;display:flex;font-size:14px;overflow:hidden}
+body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;display:flex;font-size:14px;overflow-y:auto;overflow-x:hidden}
 ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}::-webkit-scrollbar-track{background:transparent}
 
 /* ── SIDEBAR ── */
@@ -271,6 +271,19 @@ select{cursor:pointer}
 .notes-area{width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:var(--font);font-size:13px;padding:12px;min-height:100px;resize:vertical;outline:none}
 .notes-area:focus{border-color:var(--accent)}
 
+/* ── LOGIN SCREEN ── */
+#login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:9999;font-family:var(--font)}
+.login-card{background:rgba(22,27,39,.6);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.05);border-radius:24px;padding:48px 40px;width:100%;max-width:420px;text-align:center;box-shadow:0 24px 64px rgba(0,0,0,.4)}
+.login-orb{width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,var(--accent),var(--accent5));display:flex;align-items:center;justify-content:center;font-size:32px;margin:0 auto 24px;box-shadow:0 8px 24px rgba(91,124,250,.3)}
+.login-title{font-size:24px;font-weight:600;margin-bottom:8px;letter-spacing:-.5px}
+.login-sub{font-size:14px;color:var(--text3);margin-bottom:32px}
+.login-input{width:100%;background:rgba(0,0,0,.3);border:1px solid var(--border);border-radius:12px;padding:14px 16px;font-size:14px;color:var(--text);outline:none;transition:all .2s;text-align:center;font-family:var(--mono);margin-bottom:16px}
+.login-input:focus{border-color:var(--accent);background:rgba(0,0,0,.5);box-shadow:0 0 0 4px rgba(91,124,250,.1)}
+.login-btn{width:100%;background:linear-gradient(135deg,var(--accent),#7c98ff);color:white;border:none;border-radius:12px;padding:14px;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s}
+.login-btn:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(91,124,250,.3)}
+.login-btn:active{transform:translateY(0)}
+.login-error{color:var(--accent3);font-size:12px;margin-top:12px;min-height:15px}
+
 /* misc */
 .section-title{font-size:13px;font-weight:500;margin-bottom:14px;display:flex;align-items:center;gap:8px}
 .divider{border:none;border-top:1px solid var(--border);margin:18px 0}
@@ -283,6 +296,22 @@ select{cursor:pointer}
 </head>
 <body>
 
+<!-- ══ LOGIN SCREEN ══ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-orb">🤖</div>
+    <div class="login-title">InterviewAI HR Portal</div>
+    <div class="login-sub">Enter your credentials to access the dashboard</div>
+    <form id="login-form" onsubmit="handleLogin(event)">
+      <input type="password" id="login-password" class="login-input" placeholder="Enter HR Password" autocomplete="current-password" required>
+      <button type="submit" class="login-btn" id="login-btn">Secure Login</button>
+      <div id="login-error" class="login-error"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ══ APP CONTAINER ══ -->
+<div id="app-container" style="display:none; width:100%; height:100%; display:flex; flex:1">
 <!-- ══ SIDEBAR ══ -->
 <nav class="sidebar">
   <div class="sb-logo">
@@ -291,14 +320,9 @@ select{cursor:pointer}
   </div>
   <div class="sb-nav">
     <div class="nav-section">Main</div>
-    <div class="nav-item active" onclick="switchTab('overview')"><span class="ico">📊</span>Overview</div>
-    <div class="nav-item" onclick="switchTab('new')"><span class="ico">➕</span>New Interview</div>
-    <div class="nav-section">Sessions</div>
-    <div class="nav-item" onclick="switchTab('active')"><span class="ico">🔴</span>Live Sessions<span class="nav-badge red" id="live-count">0</span></div>
-    <div class="nav-item" onclick="switchTab('scheduled')"><span class="ico">📅</span>Scheduled<span class="nav-badge" id="sched-count">0</span></div>
-    <div class="nav-item" onclick="switchTab('completed')"><span class="ico">✅</span>Completed</div>
-    <div class="nav-section">Insights</div>
-    <div class="nav-item" onclick="switchTab('analytics')"><span class="ico">📈</span>Analytics</div>
+    <div class="nav-item active" onclick="switchTab('new')"><span class="ico">➕</span>HR Dashboard</div>
+    <div class="nav-item" onclick="switchTab('sessions')"><span class="ico">📅</span>Sessions Tab</div>
+    <div class="nav-item" onclick="switchTab('reports')"><span class="ico">📊</span>Reports</div>
   </div>
   <div class="sb-footer"><span class="status-dot"></span>System online · Claude API connected</div>
 </nav>
@@ -315,32 +339,10 @@ select{cursor:pointer}
 
   <div class="content">
 
-    <!-- ══ OVERVIEW TAB ══ -->
-    <div class="tab-pane active" id="tab-overview">
-      <div class="stats-grid" id="stats-grid">
-        <div class="stat-card blue"><div class="stat-num" id="s-total">—</div><div class="stat-label">Total Sessions</div></div>
-        <div class="stat-card green"><div class="stat-num" id="s-completed">—</div><div class="stat-label">Completed</div></div>
-        <div class="stat-card amber"><div class="stat-num" id="s-active">—</div><div class="stat-label">Scheduled / Live</div></div>
-        <div class="stat-card red"><div class="stat-num" id="s-noshow">—</div><div class="stat-label">No Shows</div></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 340px;gap:16px">
-        <div class="table-wrap">
-          <div class="table-header"><span class="table-title">Recent Sessions</span><span style="margin-left:auto;font-size:11px;color:var(--text3)" id="last-updated"></span></div>
-          <table id="recent-table">
-            <thead><tr><th>Candidate</th><th>Role</th><th>Level</th><th>Status</th><th>Score</th><th>Verdict</th></tr></thead>
-            <tbody id="recent-body"><tr><td colspan="6"><div class="page-loader"><div class="spinner" style="border-top-color:var(--accent)"></div> Loading...</div></td></tr></tbody>
-          </table>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:14px">
-          <div class="chart-card"><div class="chart-title">Pass Rate</div><div class="chart-sub">By verdict category</div><div class="donut-wrap"><canvas id="verdict-chart"></canvas></div><div class="verdict-legend" id="verdict-legend"></div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ NEW INTERVIEW TAB ══ -->
-    <div class="tab-pane" id="tab-new">
+    <!-- ══ HR DASHBOARD (NEW INTERVIEW) ══ -->
+    <div class="tab-pane active" id="tab-new">
       <div style="max-width:900px">
-        <div style="margin-bottom:22px"><h2 style="font-size:16px;font-weight:500;margin-bottom:4px">Set Up New Interview</h2><p style="font-size:13px;color:var(--text3)">Upload the job description and candidate resume. The AI will analyse both and generate a personalised question plan.</p></div>
+        <div style="margin-bottom:22px"><h2 style="font-size:16px;font-weight:500;margin-bottom:4px">HR Dashboard</h2><p style="font-size:13px;color:var(--text3)">Upload the job description and candidate resume. The AI will analyse both.</p></div>
         <div class="form-grid">
           <div class="form-card">
             <div class="form-label">📋 Job Description</div>
@@ -364,121 +366,62 @@ select{cursor:pointer}
               <select id="role-select">
                 <option>Software Engineer</option><option>Frontend Developer</option><option>Backend Developer</option>
                 <option>Full Stack Developer</option><option>Data Scientist</option><option>ML Engineer</option>
-                <option>DevOps Engineer</option><option>Cloud Architect</option><option>Product Manager</option>
-                <option>UX Designer</option><option>Data Analyst</option><option>Mobile Developer</option>
-                <option>QA Engineer</option><option>Engineering Manager</option><option>Security Engineer</option>
               </select>
             </div>
             <div class="form-row"><label>Number of Questions</label>
               <div class="pills">
-                <button class="pill" onclick="setPills(this,'q')">8</button>
                 <button class="pill active" onclick="setPills(this,'q')">12</button>
                 <button class="pill" onclick="setPills(this,'q')">15</button>
-                <button class="pill" onclick="setPills(this,'q')">20</button>
               </div>
             </div>
             <div class="form-row"><label>Candidate Email (for invite)</label><input type="email" id="candidate-email" placeholder="candidate@email.com"></div>
           </div>
-          <div class="form-card">
-            <div class="form-label">📅 Schedule & Notify</div>
-            <div class="form-row"><label>Preferred Interview Time</label><input type="datetime-local" id="pref-time"></div>
-            <div class="form-row"><label>Recruiter Email (for report)</label><input type="email" id="recruiter-email" placeholder="you@company.com"></div>
-            <div style="margin-top:12px">
-              <label class="check-row"><input type="checkbox" id="chk-followup" checked> Enable AI follow-up questions</label>
-              <label class="check-row"><input type="checkbox" id="chk-email" checked> Send email invitation to candidate</label>
-              <label class="check-row"><input type="checkbox" id="chk-teams"> Create Teams meeting link</label>
-            </div>
-          </div>
+          
           <div class="form-card full" style="display:flex;align-items:center;justify-content:space-between;gap:16px">
-            <div><div style="font-size:14px;font-weight:500;margin-bottom:3px">Ready to analyse</div><div style="font-size:12px;color:var(--text3)">Claude will parse documents → detect level → generate adaptive questions → schedule interview</div></div>
-            <button class="btn btn-primary" id="analyse-btn" onclick="analyseDocuments()" style="white-space:nowrap;padding:12px 28px;font-size:14px" disabled>🔍 Analyse & Schedule</button>
+            <div><div style="font-size:14px;font-weight:500;margin-bottom:3px">Ready to analyse</div><div style="font-size:12px;color:var(--text3)">Claude will parse documents and detect candidate level.</div></div>
+            <button class="btn btn-primary" id="analyse-btn" onclick="analyseDocuments()" style="white-space:nowrap;padding:12px 28px;font-size:14px" disabled>🔍 Analyse</button>
           </div>
         </div>
         <!-- Analysis Result -->
-        <div class="analysis-panel" id="analysis-panel">
+        <div class="analysis-panel" id="analysis-panel" style="display:none">
           <div class="level-banner" id="level-banner">
             <div><div class="level-name" id="ap-name"></div><div class="level-reason" id="ap-reason"></div></div>
             <div id="ap-level-badge"></div>
           </div>
-          <div class="info-chips" id="ap-chips"></div>
-          <div class="two-col" style="margin-bottom:16px">
+          <div class="two-col" style="margin-bottom:16px;margin-top:16px">
             <div><div class="section-title">Skills Detected</div><div class="skill-cloud" id="ap-skills"></div></div>
             <div><div class="section-title">Skills to Probe (JD gaps)</div><div class="skill-cloud" id="ap-missing"></div></div>
           </div>
-          <div style="margin-bottom:16px"><div class="section-title">Question Plan Preview</div><div class="q-list-preview" id="ap-questions"></div></div>
           <hr class="divider">
-          <div style="margin-bottom:14px"><div class="section-title">Candidate Interview Link</div><div class="link-row"><span class="url" id="ap-link"></span><button class="btn btn-ghost btn-sm" onclick="copyLink()">Copy</button><button class="btn btn-primary btn-sm" onclick="openInterview()">Open →</button></div></div>
           <div style="display:flex;gap:10px;justify-content:flex-end">
-            <button class="btn btn-ghost" onclick="resetForm()">← New Interview</button>
-            <button class="btn btn-success" id="schedule-btn" onclick="scheduleInterview()">📅 Send Invite & Schedule</button>
+            <button class="btn btn-ghost" onclick="resetForm()">← Reset</button>
+            <button class="btn btn-success" id="schedule-btn" onclick="scheduleInterview()">📅 Start Interview Process (30 mins)</button>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- ══ LIVE SESSIONS TAB ══ -->
-    <div class="tab-pane" id="tab-active">
+    <!-- ══ SESSIONS TAB ══ -->
+    <div class="tab-pane" id="tab-sessions">
       <div class="table-wrap">
-        <div class="table-header"><span class="table-title">Live Interview Sessions</span><span class="live-badge" style="margin-left:10px"><span class="live-dot"></span>Live</span></div>
-        <table><thead><tr><th>Candidate</th><th>Role</th><th>Progress</th><th>Duration</th><th>Live Score</th><th>Action</th></tr></thead>
-        <tbody id="live-body"><tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📡</div><div class="empty-title">No live sessions</div><div class="empty-sub">Active interviews will appear here in real-time</div></div></td></tr></tbody>
+        <div class="table-header"><span class="table-title">All Sessions</span><span style="margin-left:auto"></span><button class="btn btn-ghost btn-sm" onclick="loadSessions()">↻ Refresh</button></div>
+        <table><thead><tr><th>Candidate</th><th>Role</th><th>Level</th><th>Scheduled Time</th><th>Status</th></tr></thead>
+        <tbody id="sessions-body"><tr><td colspan="5"><div class="page-loader"><div class="spinner" style="border-top-color:var(--accent)"></div></div></td></tr></tbody>
         </table>
       </div>
     </div>
 
-    <!-- ══ SCHEDULED TAB ══ -->
-    <div class="tab-pane" id="tab-scheduled">
-      <div class="table-wrap">
-        <div class="table-header"><span class="table-title">Scheduled Sessions</span><span style="margin-left:auto"></span><button class="btn btn-ghost btn-sm" onclick="loadSessions()">↻</button></div>
-        <table><thead><tr><th>Candidate</th><th>Role</th><th>Level</th><th>Scheduled</th><th>Status</th><th>Actions</th></tr></thead>
-        <tbody id="scheduled-body"><tr><td colspan="6"><div class="page-loader"><div class="spinner" style="border-top-color:var(--accent)"></div></div></td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- ══ COMPLETED INTERVIEWS TAB ══ -->
-    <div class="tab-pane" id="tab-completed">
+    <!-- ══ REPORTS TAB ══ -->
+    <div class="tab-pane" id="tab-reports">
       <div class="table-wrap">
         <div class="table-header">
-          <span class="table-title">Completed Interviews</span>
-          <div class="search-box" style="margin-left:14px"><span>🔍</span><input id="completed-search" placeholder="Search candidate, role…" oninput="filterCompleted()"></div>
-          <select class="filter-select" id="verdict-filter" onchange="filterCompleted()">
-            <option value="">All verdicts</option>
-            <option value="STRONGLY_RECOMMENDED">Strongly Recommended</option>
-            <option value="RECOMMENDED">Recommended</option>
-            <option value="NEEDS_FURTHER_REVIEW">Needs Review</option>
-            <option value="NOT_RECOMMENDED">Not Recommended</option>
-          </select>
-          <select class="filter-select" id="level-filter" onchange="filterCompleted()">
-            <option value="">All levels</option>
-            <option value="fresher">Fresher</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="experienced">Experienced</option>
-          </select>
+          <span class="table-title">Completed Reports</span>
           <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="loadSessions()">↻</button>
         </div>
         <table>
-          <thead><tr><th>Candidate</th><th>Role</th><th>Level</th><th>Overall</th><th>Technical</th><th>Verdict</th><th>Date</th><th></th></tr></thead>
-          <tbody id="completed-body"></tbody>
+          <thead><tr><th>Candidate</th><th>Role</th><th>Overall Score</th><th>Verdict</th><th>Action</th></tr></thead>
+          <tbody id="reports-body"></tbody>
         </table>
-      </div>
-    </div>
-
-    <!-- ══ ANALYTICS TAB ══ -->
-    <div class="tab-pane" id="tab-analytics">
-      <div class="stats-grid">
-        <div class="stat-card blue"><div class="stat-num" id="a-total">—</div><div class="stat-label">Total Interviews</div></div>
-        <div class="stat-card green"><div class="stat-num" id="a-avg">—</div><div class="stat-label">Avg Overall Score</div></div>
-        <div class="stat-card amber"><div class="stat-num" id="a-pass">—</div><div class="stat-label">Pass Rate</div></div>
-        <div class="stat-card red"><div class="stat-num" id="a-noshow">—</div><div class="stat-label">No-Show Rate</div></div>
-      </div>
-      <div class="analytics-grid wide">
-        <div class="chart-card"><div class="chart-title">Score Trend</div><div class="chart-sub">Average overall score over time</div><div class="chart-wrap"><canvas id="trend-chart"></canvas></div></div>
-        <div class="chart-card"><div class="chart-title">Level Distribution</div><div class="chart-sub">Fresher vs Intermediate vs Experienced</div><div class="donut-wrap"><canvas id="level-chart"></canvas></div></div>
-      </div>
-      <div class="analytics-grid">
-        <div class="chart-card"><div class="chart-title">Score Dimensions</div><div class="chart-sub">Average across all interviews</div><div class="chart-wrap"><canvas id="radar-chart"></canvas></div></div>
-        <div class="chart-card"><div class="chart-title">Top Missing Skills</div><div class="chart-sub">Most common JD gaps across candidates</div><div class="skills-gap-list" id="skills-gap-list"><div class="page-loader" style="padding:20px"><div class="spinner" style="border-top-color:var(--accent)"></div></div></div></div>
       </div>
     </div>
 
@@ -507,14 +450,83 @@ select{cursor:pointer}
     <div class="detail-tab" onclick="switchDetailTab('notes')">HR Notes</div>
   </div>
   <div class="detail-body" id="detail-body">
-    <div class="page-loader"><div class="spinner" style="border-top-color:var(--accent)"></div> Loading session...</div>
+    <div class="page-loader"><div class="spinner" style="border-top-color:var(--accent)"></div> Loading session...    </div>
   </div>
 </div>
+</div> <!-- /app-container -->
 
-<!-- TOAST -->
+<!-- ══ TOAST ══ -->
 <div class="toast" id="toast"><span id="toast-icon"></span><span id="toast-msg"></span></div>
 
 <script>
+// ══════════════════════════════════════════════════════
+//  AUTH & GLOBAL FETCH OVERRIDE
+// ══════════════════════════════════════════════════════
+const originalFetch = window.fetch;
+window.fetch = async function() {
+  const token = sessionStorage.getItem('hrToken');
+  let [resource, config] = arguments;
+  if(typeof resource === 'string' && resource.startsWith('/api/') && token) {
+      if(!config) config = {};
+      if(!config.headers) config.headers = {};
+      // Append token unless it's the login route
+      if(resource !== '/api/hr/login') {
+          config.headers['Authorization'] = 'Bearer ' + token;
+      }
+  }
+  const response = await originalFetch(resource, config);
+  if(response.status === 401 && resource !== '/api/hr/login') {
+      logout();
+  }
+  return response;
+};
+
+async function handleLogin(e) {
+  e.preventDefault();
+  const password = document.getElementById('login-password').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+  
+  btn.textContent = 'Authenticating...';
+  err.textContent = '';
+  
+  try {
+    const res = await originalFetch('/api/hr/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ password })
+    });
+    const data = await res.json();
+    if (data.success) {
+      sessionStorage.setItem('hrToken', data.token);
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('app-container').style.display = 'flex';
+      switchTab('new'); // Land on New Interview tab default
+    } else {
+      err.textContent = data.error || 'Invalid password';
+    }
+  } catch (error) {
+    err.textContent = 'Server connection error';
+  }
+  btn.textContent = 'Secure Login';
+}
+
+function logout() {
+  sessionStorage.removeItem('hrToken');
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app-container').style.display = 'none';
+  document.getElementById('login-password').value = '';
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  const token = sessionStorage.getItem('hrToken');
+  if (token) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-container').style.display = 'flex';
+    switchTab('new');
+    loadSessions(); // Load data since they are already logged in
+  }
+});
 // ══════════════════════════════════════════════════════
 //  STATE
 // ══════════════════════════════════════════════════════
@@ -531,12 +543,9 @@ let verdictChart, levelChart, trendChart, radarChart;
 //  NAV
 // ══════════════════════════════════════════════════════
 const tabMeta = {
-  overview:  { title:'Overview', sub:'AI-powered recruitment intelligence' },
   new:       { title:'New Interview', sub:'Upload documents and configure the AI interview session' },
-  active:    { title:'Live Sessions', sub:'Real-time view of ongoing interviews' },
-  scheduled: { title:'Scheduled Interviews', sub:'Upcoming interview sessions' },
-  completed: { title:'Completed Interviews', sub:'Full history with transcripts and analytics' },
-  analytics: { title:'Analytics', sub:'Aggregate insights across all interview sessions' },
+  sessions:  { title:'All Sessions', sub:'Track all interview states' },
+  reports:   { title:'Completed Reports', sub:'Full history with transcripts and reports' },
 };
 
 function switchTab(tab) {
@@ -548,8 +557,7 @@ function switchTab(tab) {
   const m = tabMeta[tab] || {};
   document.getElementById('topbar-title').textContent = m.title || tab;
   document.getElementById('topbar-sub').textContent = m.sub || '';
-  if (tab === 'overview' || tab === 'completed' || tab === 'scheduled' || tab === 'active') loadSessions();
-  if (tab === 'analytics') loadAnalytics();
+  if (tab === 'sessions' || tab === 'reports') loadSessions();
 }
 
 // ══════════════════════════════════════════════════════
@@ -560,23 +568,12 @@ async function loadSessions() {
     const res  = await fetch('/api/hr/sessions');
     const data = await res.json();
     allSessions = data.sessions || [];
-    renderOverview();
-    renderCompleted();
-    renderScheduled();
-    renderLive();
-    document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    renderSessionsTable();
+    renderReportsTable();
   } catch(e) { console.error(e); }
 }
 
-function refreshData() { loadSessions(); if(currentTab==='analytics') loadAnalytics(); }
-
-async function loadAnalytics() {
-  try {
-    const res  = await fetch('/api/analytics');
-    analyticsData = await res.json();
-    renderAnalytics(analyticsData);
-  } catch(e) { console.error(e); }
-}
+function refreshData() { loadSessions(); }
 
 // ══════════════════════════════════════════════════════
 //  RENDER HELPERS
@@ -593,7 +590,7 @@ function statusBadge(status) {
     waiting:'badge-amber', active:'badge-red', completed:'badge-green',
     no_show:'badge-gray', failed:'badge-red',
   };
-  const labels = { created:'Created', analysed:'Ready', scheduled:'Scheduled', waiting:'Waiting', active:'In Progress', completed:'Completed', no_show:'No Show', failed:'Failed' };
+  const labels = { created:'Created', analysed:'Ready', scheduled:'Scheduled', waiting:'Waiting', active:'In Progress', completed:'Completed', no_show:'Failed (No Show)', failed:'Failed' };
   return `<span class="badge ${map[status]||'badge-gray'}">${labels[status]||status}</span>`;
 }
 
@@ -623,175 +620,49 @@ function avatarEl(name, level) {
   return `<div class="avatar" style="background:${bg}22;color:${bg};border:1px solid ${bg}44">${initials}</div>`;
 }
 
-// ── Overview ──
-function renderOverview() {
-  const total     = allSessions.length;
-  const completed = allSessions.filter(s=>s.status==='completed').length;
-  const active    = allSessions.filter(s=>['active','scheduled','waiting'].includes(s.status)).length;
-  const noshow    = allSessions.filter(s=>s.status==='no_show').length;
-  document.getElementById('s-total').textContent     = total;
-  document.getElementById('s-completed').textContent = completed;
-  document.getElementById('s-active').textContent    = active;
-  document.getElementById('s-noshow').textContent    = noshow;
-  document.getElementById('live-count').textContent  = allSessions.filter(s=>s.status==='active').length;
-  document.getElementById('sched-count').textContent = allSessions.filter(s=>s.status==='scheduled').length;
-
-  const recent = allSessions.slice(0, 10);
-  const tbody  = document.getElementById('recent-body');
-  if (!recent.length) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No sessions yet</div><div class="empty-sub">Create your first interview to get started</div></div></td></tr>`; return; }
-  tbody.innerHTML = recent.map(s => `
-    <tr class="clickable" onclick="openDetail('${s.id}')">
+// ── Sessions ──
+function renderSessionsTable() {
+  const tbody = document.getElementById('sessions-body');
+  if (!allSessions.length) { tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">No sessions yet</div></div></td></tr>`; return; }
+  tbody.innerHTML = allSessions.map(s => `
+    <tr>
       <td><div class="cell-name">${avatarEl(s.candidate_name,s.detected_level)}<div><div class="cell-primary">${s.candidate_name||'Candidate'}</div><div class="cell-sub">${s.candidate_email||''}</div></div></div></td>
       <td><div class="cell-primary">${s.role}</div></td>
       <td>${levelBadge(s.detected_level)}</td>
+      <td style="font-size:12px;color:var(--text3)">${s.scheduled_at ? new Date(s.scheduled_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '—'}</td>
       <td>${statusBadge(s.status)}</td>
-      <td>${scoreBar(s.report_score)}</td>
-      <td>${verdictBadge(s.report_verdict)}</td>
     </tr>`).join('');
-
-  // Quick verdict donut
-  const counts = { STRONGLY_RECOMMENDED:0, RECOMMENDED:0, NEEDS_FURTHER_REVIEW:0, NOT_RECOMMENDED:0 };
-  allSessions.forEach(s => { if(s.report_verdict) counts[s.report_verdict] = (counts[s.report_verdict]||0)+1; });
-  const colors = ['#34d399','#5b7cfa','#fbbf24','#f87171'];
-  const labels = ['Strong','Recommended','Review','Rejected'];
-  const vals   = Object.values(counts);
-  if (verdictChart) verdictChart.destroy();
-  const ctx = document.getElementById('verdict-chart').getContext('2d');
-  verdictChart = new Chart(ctx, {
-    type:'doughnut',
-    data:{ labels, datasets:[{ data:vals, backgroundColor:colors.map(c=>c+'33'), borderColor:colors, borderWidth:2 }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, cutout:'72%' },
-  });
-  document.getElementById('verdict-legend').innerHTML = labels.map((l,i) =>
-    `<div class="vl-row"><span class="vl-dot" style="background:${colors[i]}"></span><span class="vl-label">${l}</span><span class="vl-val">${vals[i]}</span></div>`
-  ).join('');
 }
 
-// ── Completed ──
-let completedFiltered = [];
-function renderCompleted() {
+// ── Reports ──
+function renderReportsTable() {
   const sessions = allSessions.filter(s=>s.status==='completed');
-  completedFiltered = sessions;
-  renderCompletedTable(sessions);
-}
-function filterCompleted() {
-  const q  = document.getElementById('completed-search').value.toLowerCase();
-  const vf = document.getElementById('verdict-filter').value;
-  const lf = document.getElementById('level-filter').value;
-  const res = allSessions.filter(s => {
-    if (s.status !== 'completed') return false;
-    if (q && !(s.candidate_name||'').toLowerCase().includes(q) && !(s.role||'').toLowerCase().includes(q)) return false;
-    if (vf && s.report_verdict !== vf) return false;
-    if (lf && s.detected_level !== lf) return false;
-    return true;
-  });
-  renderCompletedTable(res);
-}
-function renderCompletedTable(sessions) {
-  const tbody = document.getElementById('completed-body');
-  if (!sessions.length) { tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🗂</div><div class="empty-title">No completed interviews</div><div class="empty-sub">Completed sessions will appear here with full transcripts and analysis</div></div></td></tr>`; return; }
-  tbody.innerHTML = sessions.map(s => `
-    <tr class="clickable" onclick="openDetail('${s.id}')">
-      <td><div class="cell-name">${avatarEl(s.candidate_name,s.detected_level)}<div><div class="cell-primary">${s.candidate_name||'Candidate'}</div><div class="cell-sub">${s.candidate_email||''}</div></div></div></td>
-      <td><div class="cell-primary">${s.role}</div></td>
-      <td>${levelBadge(s.detected_level)}</td>
-      <td>${scoreBar(s.report_score)}</td>
-      <td>${s.answers_count ? `<span style="font-family:var(--mono);font-size:12px">${s.answers_count} answered</span>` : '—'}</td>
-      <td>${verdictBadge(s.report_verdict)}</td>
-      <td style="font-size:12px;color:var(--text3)">${s.created_at ? new Date(s.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'}) : '—'}</td>
-      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openDetail('${s.id}')">View →</button></td>
-    </tr>`).join('');
-}
+  const tbody = document.getElementById('reports-body');
+  
+  let html = '';
+  
+  // Fake Demo Report
+  html += `
+    <tr class="clickable" onclick="openDetail('demo-report')">
+      <td><div class="cell-name">${avatarEl('Alice Sharma', 'experienced')}<div><div class="cell-primary">Alice Sharma (Demo)</div><div class="cell-sub">alice.demo@email.com</div></div></div></td>
+      <td><div class="cell-primary">Senior Data Engineer</div></td>
+      <td>${scoreBar(8.5)}</td>
+      <td>${verdictBadge('STRONGLY_RECOMMENDED')}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation(); openDetail('demo-report')">View Demo Report →</button></td>
+    </tr>`;
 
-// ── Scheduled ──
-function renderScheduled() {
-  const sessions = allSessions.filter(s=>['scheduled','waiting','analysed'].includes(s.status));
-  const tbody    = document.getElementById('scheduled-body');
-  if (!sessions.length) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📅</div><div class="empty-title">No scheduled sessions</div></div></td></tr>`; return; }
-  tbody.innerHTML = sessions.map(s => `
-    <tr class="clickable" onclick="openDetail('${s.id}')">
-      <td><div class="cell-name">${avatarEl(s.candidate_name,s.detected_level)}<div><div class="cell-primary">${s.candidate_name||'Candidate'}</div><div class="cell-sub">${s.candidate_email||''}</div></div></div></td>
-      <td>${s.role}</td>
-      <td>${levelBadge(s.detected_level)}</td>
-      <td style="font-size:12px;color:var(--text2)">${s.scheduled_at ? new Date(s.scheduled_at).toLocaleString('en-IN',{dateStyle:'medium',timeStyle:'short'}) : '—'}</td>
-      <td>${statusBadge(s.status)}</td>
-      <td style="display:flex;gap:6px">
-        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();copySessionLink('${s.id}')">🔗 Copy Link</button>
-        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openDetail('${s.id}')">View</button>
-      </td>
-    </tr>`).join('');
-}
-
-// ── Live ──
-function renderLive() {
-  const sessions = allSessions.filter(s=>s.status==='active');
-  const tbody    = document.getElementById('live-body');
-  if (!sessions.length) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📡</div><div class="empty-title">No live sessions</div><div class="empty-sub">Active interviews will appear here in real-time</div></div></td></tr>`; return; }
-  tbody.innerHTML = sessions.map(s => `
-    <tr class="clickable" onclick="openDetail('${s.id}')">
-      <td><div class="cell-name">${avatarEl(s.candidate_name,s.detected_level)}<div><div class="cell-primary">${s.candidate_name||'Candidate'}</div></div></div></td>
-      <td>${s.role}</td>
-      <td><span style="font-family:var(--mono);font-size:12px">${s.answers_count||0} / — answered</span></td>
-      <td><span style="font-size:12px;color:var(--text3)">Live</span></td>
-      <td>—</td>
-      <td><button class="btn btn-success btn-sm">👁 Watch Live</button></td>
-    </tr>`).join('');
-}
-
-// ═══════════════════════════════════════════════════════
-//  ANALYTICS
-// ═══════════════════════════════════════════════════════
-function renderAnalytics(d) {
-  if (!d) return;
-  document.getElementById('a-total').textContent = d.completed || 0;
-  document.getElementById('a-avg').textContent   = d.avgScores?.ov ? Number(d.avgScores.ov).toFixed(1) : '—';
-  const pass = d.verdicts?.filter(v=>['STRONGLY_RECOMMENDED','RECOMMENDED'].includes(v.verdict)).reduce((a,b)=>a+b.c,0);
-  const total = d.verdicts?.reduce((a,b)=>a+b.c,0) || 1;
-  document.getElementById('a-pass').textContent   = Math.round(pass/total*100) + '%';
-  document.getElementById('a-noshow').textContent = d.noShow || 0;
-
-  // Trend chart
-  const trend = (d.scoreTrend||[]).reverse();
-  if (trendChart) trendChart.destroy();
-  const ctx1 = document.getElementById('trend-chart').getContext('2d');
-  trendChart = new Chart(ctx1, {
-    type:'line',
-    data:{ labels:trend.map(t=>t.date), datasets:[{ label:'Avg Score', data:trend.map(t=>Number(t.avg_score).toFixed(1)), borderColor:'#5b7cfa', backgroundColor:'rgba(91,124,250,.08)', fill:true, tension:.4, pointRadius:3, pointBackgroundColor:'#5b7cfa' }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ y:{ min:0,max:10, grid:{ color:'rgba(30,45,69,.5)' }, ticks:{ color:'#4b5e7a', font:{size:10} } }, x:{ grid:{ display:false }, ticks:{ color:'#4b5e7a', font:{size:10}, maxTicksLimit:6 } } } },
-  });
-
-  // Level chart
-  const levels = { fresher:0, intermediate:0, experienced:0 };
-  (d.levels||[]).forEach(l => levels[l.detected_level] = l.c);
-  if (levelChart) levelChart.destroy();
-  const ctx2 = document.getElementById('level-chart').getContext('2d');
-  levelChart = new Chart(ctx2, {
-    type:'doughnut',
-    data:{ labels:['Fresher','Intermediate','Experienced'], datasets:[{ data:Object.values(levels), backgroundColor:['rgba(91,124,250,.3)','rgba(52,211,153,.3)','rgba(251,191,36,.3)'], borderColor:['#5b7cfa','#34d399','#fbbf24'], borderWidth:2 }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{ color:'#94a3b8', font:{size:11} } } }, cutout:'65%' },
-  });
-
-  // Radar chart
-  if (radarChart) radarChart.destroy();
-  const ctx3 = document.getElementById('radar-chart').getContext('2d');
-  const as = d.avgScores || {};
-  radarChart = new Chart(ctx3, {
-    type:'radar',
-    data:{ labels:['Technical','Depth','Clarity','Problem Solving'], datasets:[{ label:'Avg Score', data:[as.tech||0,as.depth||0,as.comm||0,(as.tech+as.depth)/2||0].map(v=>Number(v).toFixed(1)), borderColor:'#5b7cfa', backgroundColor:'rgba(91,124,250,.12)', pointBackgroundColor:'#5b7cfa', pointRadius:4 }] },
-    options:{ responsive:true, maintainAspectRatio:false, plugins:{ legend:{ display:false } }, scales:{ r:{ min:0,max:10, grid:{ color:'rgba(30,45,69,.6)' }, ticks:{ color:'#4b5e7a', font:{size:9}, stepSize:2 }, pointLabels:{ color:'#94a3b8', font:{size:11} } } } },
-  });
-
-  // Skills gap
-  const skillsList = document.getElementById('skills-gap-list');
-  const skills = {};
-  allSessions.forEach(s => {
-    try { JSON.parse(s.missing_skills||'[]').forEach(sk=>{ skills[sk]=(skills[sk]||0)+1; }); } catch{}
-  });
-  const sorted = Object.entries(skills).sort((a,b)=>b[1]-a[1]).slice(0,8);
-  const max    = sorted[0]?.[1] || 1;
-  skillsList.innerHTML = sorted.length ? sorted.map(([sk,cnt]) =>
-    `<div class="sg-row"><span class="sg-label">${sk}</span><div class="sg-track"><div class="sg-fill" style="width:${Math.round(cnt/max*100)}%"></div></div><span class="sg-val">${cnt}</span></div>`
-  ).join('') : '<div style="font-size:12px;color:var(--text3);padding:20px;text-align:center">No data yet</div>';
+  if (sessions.length) {
+    html += sessions.map(s => `
+      <tr class="clickable" onclick="openDetail('${s.id}')">
+        <td><div class="cell-name">${avatarEl(s.candidate_name,s.detected_level)}<div><div class="cell-primary">${s.candidate_name||'Candidate'}</div><div class="cell-sub">${s.candidate_email||''}</div></div></div></td>
+        <td><div class="cell-primary">${s.role}</div></td>
+        <td>${scoreBar(s.report_score)}</td>
+        <td>${verdictBadge(s.report_verdict)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openDetail('${s.id}')">View Demo Report →</button></td>
+      </tr>`).join('');
+  }
+  
+  tbody.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -809,8 +680,26 @@ async function openDetail(sessionId) {
   document.getElementById('dp-transcript-btn').setAttribute('data-session', sessionId);
 
   try {
-    const res  = await fetch(`/api/hr/session/${sessionId}`);
-    const data = await res.json();
+    let data;
+    if (sessionId === 'demo-report') {
+      const now = new Date();
+      data = {
+        session: { candidate_name: 'Alice Sharma (Demo)', candidate_email: 'alice.demo@email.com', role: 'Senior Data Engineer', detected_level: 'experienced', status: 'completed', id: 'demo-report' },
+        report: { overall_score: 8.5, technical_avg: 9.0, clarity_avg: 8.0, depth_avg: 8.5, problem_solving_avg: 8.5, verdict: 'STRONGLY_RECOMMENDED', executive_summary: 'Alice demonstrated exceptional knowledge of data pipelines, real-time streaming, and distributed systems. Highly recommended for the Senior Data Engineer role.', ai_justification: 'The candidate accurately explained advanced Spark internals and Kafka partitioning strategies without hesitation.', strengths: '["Kafka","Spark","Data Modeling","Real-time Processing"]', gaps: '["Kubernetes administration"]', stage2_focus_areas: '["System Design","Behavioral"]', failed_questions: '[]' },
+        questions: [
+          { question_text: 'Can you explain how you handle real-time data ingestion at scale?', question_type: 'technical' },
+          { question_text: 'What about handling late-arriving data in streaming pipelines?', question_type: 'technical' }
+        ],
+        answers: [
+          { question_text: 'Can you explain how you handle real-time data ingestion at scale?', answer_text: 'I would use a distributed streaming platform like Apache Kafka with proper partitioning to ensure high throughput...', technical_score: 9, depth_score: 8, clarity_score: 9, problem_solving_score: 8, overall_score: 8.5, answered_at: new Date(now.getTime() - 15*60000).toISOString() },
+          { question_text: 'What about handling late-arriving data in streaming pipelines?', answer_text: 'We can use watermarking and allowed lateness features in Apache Flink or Spark Structured Streaming.', technical_score: 9, depth_score: 9, clarity_score: 8, problem_solving_score: 9, overall_score: 8.75, answered_at: new Date(now.getTime() - 10*60000).toISOString(), is_followup: 1 }
+        ]
+      };
+    } else {
+      const res  = await fetch(`/api/hr/session/${sessionId}`);
+      data = await res.json();
+    }
+    
     currentDetailSession = data;
     document.getElementById('dp-title').textContent = data.session?.candidate_name || 'Session';
     document.getElementById('dp-sub').textContent   = `${data.session?.role} · ${data.session?.detected_level} · ${statusBadge(data.session?.status).replace(/<[^>]+>/g,'')}`;
@@ -881,7 +770,10 @@ function renderDetailOverview(d) {
       <button class="btn btn-ghost btn-sm" onclick="copySessionLink('${s.id}')">🔗 Copy Interview Link</button>
       <button class="btn btn-ghost btn-sm" onclick="window.open('/report/${s.id}','_blank')">📄 Full Report</button>
       <button class="btn btn-ghost btn-sm" onclick="downloadTranscript()">⬇ Transcript</button>
-      <button class="btn btn-ghost btn-sm" onclick="window.open('/api/hr/report/${s.id}/pdf','_blank')">⬇ Download PDF</button>
+      ${s.id === 'demo-report' ? 
+        `<button class="btn btn-ghost btn-sm" onclick="toast('Demo PDF generation is mocked', 'ℹ️')">⬇ Download PDF</button>` :
+        `<button class="btn btn-ghost btn-sm" onclick="window.open('/api/hr/report/${s.id}/pdf','_blank')">⬇ Download PDF</button>`
+      }
       ${s.recruiter_email ? `<button class="btn btn-success btn-sm" onclick="resendReport('${s.id}')">✉ Resend Report</button>` : ''}
     </div>`;
 }
@@ -905,10 +797,11 @@ function renderDetailTranscript(d) {
 
     html += `<div class="q-section-divider">Question ${i+1} · ${ans.question_text ? ans.question_text.substring(0,30)+'…' : ''}</div>`;
 
+    const timeStr = ans.answered_at ? new Date(ans.answered_at).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : '';
     // AI asks
     html += `<div class="t-msg ai">
       <div class="t-av">🤖</div>
-      <div class="t-bubble"><div class="t-tag">${(ans.question_type||'question').toUpperCase()}</div>${ans.question_text||'—'}</div>
+      <div class="t-bubble"><div class="t-tag">${(ans.question_type||'question').toUpperCase()}</div>${ans.question_text||'—'}<div style="font-size:10px;color:var(--text3);text-align:right;margin-top:4px">${timeStr}</div></div>
     </div>`;
 
     // Candidate answers
@@ -921,15 +814,17 @@ function renderDetailTranscript(d) {
             <div class="score-track" style="width:80px"><div class="score-fill" style="width:${Math.min(sc*10,100)}%;background:${scoreColor}"></div></div>
             <span class="t-score-num" style="color:${scoreColor}">${sc?.toFixed(1)||'—'}/10</span>
           </div>
+          <div style="font-size:10px;color:var(--text3);text-align:right;margin-top:4px">${timeStr}</div>
         </div>
       </div>`;
     }
 
     // Follow-ups
     followups.forEach(fu => {
+      const fuTimeStr = fu.answered_at ? new Date(fu.answered_at).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : '';
       html += `<div class="t-msg ai">
         <div class="t-av">🤖</div>
-        <div class="t-bubble"><span class="followup-tag">Follow-up</span><br>${fu.question_text||'—'}</div>
+        <div class="t-bubble"><span class="followup-tag">Follow-up</span><br>${fu.question_text||'—'}<div style="font-size:10px;color:var(--text3);text-align:right;margin-top:4px">${fuTimeStr}</div></div>
       </div>`;
       if (fu.answer_text) {
         const fsc = fu.overall_score;
@@ -938,6 +833,7 @@ function renderDetailTranscript(d) {
           <div class="t-av">${(d.session?.candidate_name||'C')[0]}</div>
           <div class="t-bubble">${fu.answer_text}
             <div class="t-score-inline"><span class="t-score-label">Score</span><div class="score-track" style="width:80px"><div class="score-fill" style="width:${Math.min(fsc*10,100)}%;background:${fcolor}"></div></div><span class="t-score-num" style="color:${fcolor}">${fsc?.toFixed(1)||'—'}/10</span></div>
+            <div style="font-size:10px;color:var(--text3);text-align:right;margin-top:4px">${fuTimeStr}</div>
           </div>
         </div>`;
       }
@@ -1026,8 +922,12 @@ function renderDetailReport(d) {
       <div style="font-size:13px;line-height:1.7">${rp.executive_summary||'—'}</div>
     </div>
 
-    <div style="background:${vc}11;border:1px solid ${vc}33;border-radius:var(--r);padding:14px;margin-bottom:18px">
-      <div style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;color:${vc}">AI Hiring Justification</div>
+    <div style="background:${vc}11;border:1px solid ${vc}33;border-radius:var(--r);padding:16px;margin-bottom:18px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:10px;color:${vc};display:flex;align-items:center;gap:8px">
+        <span>${rp.verdict === 'NOT_RECOMMENDED' ? '❌' : '✅'} Final Recommendation:</span>
+        <span style="background:${vc};color:#fff;padding:2px 8px;border-radius:12px;font-size:12px">${rp.verdict === 'NOT_RECOMMENDED' ? 'DESELECT' : 'SELECT'}</span>
+      </div>
+      <div style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;color:${vc}99">Reasoning & Justification</div>
       <div style="font-size:13px;line-height:1.7;color:${vc}">${rp.ai_justification||rp.hiring_justification||'—'}</div>
     </div>
 
@@ -1148,6 +1048,9 @@ function setPills(el, group) {
   if (group==='q') selectedQ = parseInt(el.textContent);
 }
 
+let tempFilesData = null;
+let currentAnalysis = null;
+
 async function analyseDocuments() {
   if (!uploadedFiles.jd || !uploadedFiles.resume) { toast('Please upload both JD and resume PDFs first', '⚠'); return; }
   const btn = document.getElementById('analyse-btn');
@@ -1156,92 +1059,108 @@ async function analyseDocuments() {
     const fd = new FormData();
     if (uploadedFiles.jd)     fd.append('jd', uploadedFiles.jd);
     if (uploadedFiles.resume) fd.append('resume', uploadedFiles.resume);
-    fd.append('role', document.getElementById('role-select').value);
-    fd.append('questionCount', selectedQ);
-    fd.append('recruiterEmail', document.getElementById('recruiter-email').value);
-    fd.append('candidateEmail', document.getElementById('candidate-email').value);
-    const res  = await fetch('/api/hr/upload-and-analyse', { method:'POST', body:fd });
+    
+    const roleEl = document.getElementById('role-select');
+    const recEmailEl = document.getElementById('recruiter-email');
+    const candEmailEl = document.getElementById('candidate-email');
+    
+    fd.append('role', roleEl ? roleEl.value : 'Software Engineer');
+    fd.append('questionCount', selectedQ || 12);
+    fd.append('recruiterEmail', recEmailEl ? recEmailEl.value : '');
+    fd.append('candidateEmail', candEmailEl ? candEmailEl.value : '');
+    
+    const res  = await fetch('/api/analyse', { method:'POST', body:fd });
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
-    currentSessionId = data.sessionId;
+    
+    currentAnalysis = data.analysis;
+    tempFilesData = data.tempFiles;
     renderAnalysisPanel(data);
     toast('Analysis complete!', '✓');
   } catch(e) {
     toast('Error: ' + e.message, '✕');
   } finally {
-    btn.innerHTML = '🔍 Analyse & Schedule'; btn.disabled = false;
+    btn.innerHTML = '🔍 Analyse'; btn.disabled = false;
   }
 }
 
 function renderAnalysisPanel(data) {
   const a  = data.analysis;
-  const qs = data.questions;
   const panel = document.getElementById('analysis-panel');
   const banner = document.getElementById('level-banner');
   const lvlColors = { fresher:'#5b7cfa', intermediate:'#34d399', experienced:'#fbbf24' };
   const lvlLabels = { fresher:'🌱 Fresher (0–2 yrs)', intermediate:'⚡ Intermediate (2–5 yrs)', experienced:'🏆 Experienced (5+ yrs)' };
-  const c = lvlColors[a.detectedLevel]||'#94a3b8';
-  banner.className = `level-banner ${a.detectedLevel}`;
+  let baseLvl = 'intermediate';
+  if (a.detectedLevel.toLowerCase().includes('fresher')) baseLvl = 'fresher';
+  if (a.detectedLevel.toLowerCase().includes('experience')) baseLvl = 'experienced';
+  
+  const c = lvlColors[baseLvl] || '#94a3b8';
+  banner.className = `level-banner ${baseLvl}`;
   document.getElementById('ap-name').textContent = a.candidateName;
   document.getElementById('ap-reason').textContent = a.levelReason;
-  document.getElementById('ap-level-badge').innerHTML = `<span class="badge" style="background:${c}22;color:${c};border:1px solid ${c}44;font-size:13px;padding:5px 14px">${lvlLabels[a.detectedLevel]}</span>`;
-  document.getElementById('ap-chips').innerHTML = [
-    `<div class="info-chip"><span>Experience</span>${a.yearsExperience||'?'} years</div>`,
-    `<div class="info-chip"><span>JD Match</span>${a.jdMatchScore||0}%</div>`,
-    `<div class="info-chip"><span>Questions</span>${qs.length} generated</div>`,
-    `<div class="info-chip"><span>Education</span>${a.education||'Not detected'}</div>`,
-  ].join('');
+  document.getElementById('ap-level-badge').innerHTML = `<span class="badge" style="background:${c}22;color:${c};border:1px solid ${c}44;font-size:13px;padding:5px 14px">${lvlLabels[baseLvl]}</span>`;
+  
   document.getElementById('ap-skills').innerHTML = (a.keySkills||[]).map(s=>`<span class="skill-tag">${s}</span>`).join('');
   document.getElementById('ap-missing').innerHTML = (a.missingSkills||[]).map(s=>`<span class="skill-tag miss">${s}</span>`).join('');
-  const typeMap = { technical:'qt-technical', behavioral:'qt-behavioral', situational:'qt-situational', motivational:'qt-motivational' };
-  document.getElementById('ap-questions').innerHTML = qs.slice(0,8).map(q=>`
-    <div class="q-chip-prev">
-      <span class="q-num-badge">Q${q.id}</span>
-      <span class="q-type-badge ${typeMap[q.type]||'qt-technical'}">${q.type}</span>
-      <span style="color:var(--text2)">${q.topic}</span>
-      <span style="margin-left:auto;font-size:10px;color:var(--text3)">${q.depth}</span>
-    </div>`).join('') + (qs.length>8?`<div style="font-size:11px;color:var(--text3);padding:6px 14px">+${qs.length-8} more questions…</div>`:'');
-  const link = `${location.origin}/candidate.html?session=${data.sessionId}`;
-  document.getElementById('ap-link').textContent = link;
+  
+  panel.style.display = 'block';
   panel.classList.add('show');
   panel.scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
 async function scheduleInterview() {
-  if (!currentSessionId) return;
+  if (!currentAnalysis || !tempFilesData) return;
   const btn = document.getElementById('schedule-btn');
   btn.innerHTML = '<span class="spinner"></span> Scheduling…'; btn.disabled = true;
   try {
-    const res = await fetch('/api/hr/schedule', {
+    const payload = {
+      analysis: currentAnalysis,
+      tempFiles: tempFilesData,
+      role: document.getElementById('role-select') ? document.getElementById('role-select').value : 'Software Engineer',
+      questionCount: selectedQ || 12,
+      candidateEmail: document.getElementById('candidate-email') ? document.getElementById('candidate-email').value : '',
+      recruiterEmail: document.getElementById('recruiter-email') ? document.getElementById('recruiter-email').value : ''
+    };
+    
+    const res = await fetch('/api/schedule', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ sessionId:currentSessionId, candidateEmail:document.getElementById('candidate-email').value, preferredTime:document.getElementById('pref-time').value||null }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     if (!data.success) throw new Error(data.error);
-    toast(data.emailSent ? 'Invitation sent to candidate!' : 'Session scheduled (email not configured)', '✓');
-    loadSessions();
+    
+    currentSessionId = data.sessionId;
+    toast('Interview Scheduled! Available for 30 minutes.', '✓');
+    
+    // Reset the UI and jump to Sessions tab
+    resetForm();
+    switchTab('sessions');
   } catch(e) { toast('Error: ' + e.message, '✕'); }
-  finally { btn.innerHTML = '📅 Send Invite & Schedule'; btn.disabled = false; }
+  finally { btn.innerHTML = '📅 Start Interview Process (30 mins)'; btn.disabled = false; }
 }
 
-function copyLink() {
-  navigator.clipboard.writeText(document.getElementById('ap-link').textContent).then(()=>toast('Link copied!', '✓'));
-}
-function openInterview() {
-  if (currentSessionId) window.open(`/candidate.html?session=${currentSessionId}`, '_blank');
-}
 function copySessionLink(id) {
   navigator.clipboard.writeText(`${location.origin}/candidate.html?session=${id}`).then(()=>toast('Link copied!','✓'));
-}
-function openFullReport() {
-  if (currentDetailSession?.session?.id) window.open(`/report/${currentDetailSession.session.id}`, '_blank');
 }
 function downloadTranscript() {
   const id = currentDetailSession?.session?.id; if (!id) return;
   window.open(`/api/hr/transcript/${id}`, '_blank');
 }
-async function resendReport(id) { toast('Report re-sent!', '✓'); }
-function resetForm() { document.getElementById('analysis-panel').classList.remove('show'); currentSessionId=null; }
+function resetForm() { 
+  document.getElementById('analysis-panel').style.display = 'none'; 
+  document.getElementById('analysis-panel').classList.remove('show'); 
+  currentSessionId=null;
+  currentAnalysis=null;
+  tempFilesData=null;
+  document.getElementById('jd-file').value = '';
+  document.getElementById('resume-file').value = '';
+  document.getElementById('jd-fname').innerHTML = '';
+  document.getElementById('resume-fname').innerHTML = '';
+  document.getElementById('jd-zone').classList.remove('has-file');
+  document.getElementById('resume-zone').classList.remove('has-file');
+  uploadedFiles = { jd: null, resume: null };
+  checkEnableButton();
+}
 
 // ══ Socket.io real-time ══
 socket.on('session:update', data => { loadSessions(); });
@@ -1259,8 +1178,7 @@ function toast(msg, icon='✓') {
 }
 
 // ══ Init ══
-loadSessions();
-loadAnalytics();
+// Initialize auth properly, no global loadSessions()
 </script>
 </body>
 </html>

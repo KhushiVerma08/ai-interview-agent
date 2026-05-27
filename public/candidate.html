@@ -332,6 +332,24 @@ async function submitAnswer() {
 // Initialize voices
 window.speechSynthesis.onvoiceschanged = () => { window.speechSynthesis.getVoices(); };
 
+// --- Tab/Window Integrity Monitor ---
+let integrityViolations = 0;
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && sessionId && document.getElementById('screen-interview').classList.contains('active')) {
+    integrityViolations++;
+    console.warn("Integrity Violation: Tab switched or minimized.");
+    fetch("/api/interview/integrity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: sessionId,
+        eventType: "INTEGRITY_ALERT",
+        detail: "Candidate switched tabs or minimized window. Count: " + integrityViolations
+      })
+    }).catch(e => console.error("Integrity log failed", e));
+  }
+});
+
 </script>
 </body>
 </html>

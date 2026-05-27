@@ -95,7 +95,8 @@ db.exec(`
     needs_followup        INTEGER DEFAULT 0,
     followup_question     TEXT,
     followup_reason       TEXT,
-    answered_at           TEXT DEFAULT (datetime('now'))
+    answered_at           TEXT DEFAULT (datetime('now')),
+    audio_url             TEXT
   );
 
   -- Final evaluation reports

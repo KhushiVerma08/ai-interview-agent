@@ -18,7 +18,7 @@ const mammoth     = require("mammoth");
 const nodemailer  = require("nodemailer");
 
 const { db } = require("./src/config/db");
-const { router: hrRoutes, basicAuth } = require("./src/routes/hr");
+const { router: hrRoutes, requireAuthToken } = require("./src/routes/hr");
 const interviewRoutes = require("./src/routes/interview");
 const emailService = require("./src/services/emailService");
 
@@ -40,13 +40,7 @@ if (process.env.GEMINI_API_KEY) {
 app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 
-// Protect HR dashboard and root with basicAuth
-app.use("/", (req, res, next) => {
-  if (req.path === "/" || req.path === "/index.html") {
-    return basicAuth(req, res, next);
-  }
-  next();
-});
+// Removed basicAuth from static files so the custom login UI can load
 
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -97,22 +91,31 @@ async function extractText(filePath) {
   return "";
 }
 
-async function callClaude(messages, systemPrompt, maxTokens = 1500) {
-  if (anthropicClient) {
-    const response = await anthropicClient.messages.create({
-      model:      "claude-3-5-sonnet-20241022",
-      max_tokens: maxTokens,
-      system:     systemPrompt,
-      messages,
-    });
-    return response.content[0].text;
-  } else if (geminiClient) {
-    const model = geminiClient.getGenerativeModel({ model: "gemini-2.5-flash", systemInstruction: systemPrompt });
-    const prompt = messages.map(m => m.role + ": " + m.content).join("\\n");
-    const result = await model.generateContent(prompt);
-    return result.response.text();
-  } else {
-    throw new Error("No AI API configured. Please provide ANTHROPIC_API_KEY or GEMINI_API_KEY in .env");
+async function callClaude(messages, systemPrompt, maxTokens = 1500, retries = 3) {
+  try {
+    if (anthropicClient) {
+      const response = await anthropicClient.messages.create({
+        model:      "claude-3-5-sonnet-20241022",
+        max_tokens: maxTokens,
+        system:     systemPrompt,
+        messages,
+      });
+      return response.content[0].text;
+    } else if (geminiClient) {
+      const model = geminiClient.getGenerativeModel({ model: "gemini-flash-latest", systemInstruction: systemPrompt });
+      const prompt = messages.map(m => m.role + ": " + m.content).join("\\n");
+      const result = await model.generateContent(prompt);
+      return result.response.text();
+    } else {
+      throw new Error("No AI API configured. Please provide ANTHROPIC_API_KEY or GEMINI_API_KEY in .env");
+    }
+  } catch (error) {
+    if (error.message && error.message.includes('429') && retries > 0) {
+      console.warn(`Gemini API rate limit hit (429) in server.js. Retrying in 10s... (${retries} left)`);
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      return callClaude(messages, systemPrompt, maxTokens, retries - 1);
+    }
+    throw error;
   }
 }
 
@@ -133,7 +136,7 @@ function cleanupFile(filePath) {
 //  ROUTE 1 — Upload JD + Resume  →  Analyse & categorise
 // ═══════════════════════════════════════════════════════════════
 app.post("/api/analyse",
-  basicAuth,
+  requireAuthToken,
   upload.fields([{ name: "resume" }, { name: "jd" }]),
   async (req, res) => {
     let resumePath, jdPath;
@@ -180,7 +183,8 @@ ${resumeText || "No resume provided — use generic profile for role"}
 Return this exact JSON shape:
 {
   "candidateName": "Full name or 'Candidate'",
-  "detectedLevel": "fresher|intermediate|experienced",
+  "candidateEmail": "email@example.com or empty string if not found",
+  "detectedLevel": "fresher (0-2 yr)|intermediate (2-5/10 yr)|experienced (5/10 yr and above)",
   "yearsExperience": <number>,
   "levelConfidence": <0-100>,
   "levelReason": "one sentence explaining why this level was assigned",
@@ -191,7 +195,7 @@ Return this exact JSON shape:
   "redFlags": ["concern if any, else empty array"],
   "jdMatchScore": <0-100>,
   "summaryForAgent": "2-3 sentences briefing the AI interviewer on this candidate"
-}`,
+}`
         }],
         "You are an expert technical recruiter. Analyse resumes precisely. Return ONLY valid JSON — no prose, no markdown fences.",
         1200
@@ -200,25 +204,49 @@ Return this exact JSON shape:
       const analysis = parseJSON(analysisRaw);
       if (!analysis) throw new Error("Failed to parse analysis JSON");
 
+      // Return analysis results and temporary file paths to the frontend
+      res.json({
+        success: true,
+        analysis,
+        tempFiles: {
+          resume: resumePath ? path.basename(resumePath) : null,
+          jd: jdPath ? path.basename(jdPath) : null
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
+    }
+  }
+);
+
+// --- 2. START / SCHEDULE INTERVIEW ---
+app.post(
+  "/api/schedule",
+  async (req, res) => {
+    try {
+      const { analysis, role, questionCount, candidateEmail, recruiterEmail, tempFiles } = req.body;
+      if (!analysis || !role) return res.status(400).json({ error: "Missing required data to schedule." });
+
       // --- AI: Generate personalised questions ---
       const levelConfig = {
-        fresher: {
-          label:  "Fresher (0–2 years)",
+        "fresher (0-2 yr)": {
+          label:  "Fresher (0-2 yr)",
           focus:  "fundamentals, theoretical knowledge, basic problem-solving, learning agility, enthusiasm. Avoid deep architecture or leadership questions.",
           depth:  "surface to medium",
         },
-        intermediate: {
-          label:  "Intermediate (2–5 years)",
+        "intermediate (2-5/10 yr)": {
+          label:  "Intermediate (2-5/10 yr)",
           focus:  "hands-on implementation, debugging, moderate system design, past project impact, trade-off decisions.",
           depth:  "medium to deep",
         },
-        experienced: {
-          label:  "Experienced (5+ years)",
+        "experienced (5/10 yr and above)": {
+          label:  "Experienced (5/10 yr and above)",
           focus:  "architecture decisions at scale, technical leadership, mentoring, complex trade-offs, cross-team impact, strategy.",
           depth:  "deep",
         },
       };
-      const lvl = levelConfig[analysis.detectedLevel] || levelConfig.fresher;
+      const lvl = levelConfig[analysis.detectedLevel] || levelConfig["fresher (0-2 yr)"];
 
       const questionsRaw = await callClaude(
         [{
@@ -268,42 +296,55 @@ Return ONLY a JSON array:
 
       // --- Create session in SQLite DB ---
       const sessionId = uuid();
+      const scheduledAt = new Date(Date.now() + 30 * 60000).toISOString(); // 30 mins from now
+      const teamsLink = `https://teams.microsoft.com/l/meetup-join/19%3ameeting_${uuid().replace(/-/g, "")}`;
+      const finalCandidateEmail = analysis.candidateEmail || candidateEmail || "";
 
-      let finalResumeUrl = null;
-      let finalJdUrl = null;
+      // Move files to uploads/sessions/<sessionId>/
+      const sessionDir = path.join(process.cwd(), "uploads", "sessions", sessionId);
+      if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
 
-      // Move files to persistent storage
-      if (resumePath && fs.existsSync(resumePath)) {
-        finalResumeUrl = path.join("uploads", "documents", `${sessionId}_resume${path.extname(resumePath)}`);
-        fs.renameSync(resumePath, finalResumeUrl);
+      let finalResumeUrl = null, finalJdUrl = null;
+      if (tempFiles?.resume) {
+        const oldResumePath = path.join(process.cwd(), "uploads", "documents", tempFiles.resume);
+        if (fs.existsSync(oldResumePath)) {
+          finalResumeUrl = path.join("uploads", "sessions", sessionId, `resume${path.extname(tempFiles.resume)}`);
+          fs.renameSync(oldResumePath, path.join(process.cwd(), finalResumeUrl));
+        }
       }
-      if (jdPath && fs.existsSync(jdPath)) {
-        finalJdUrl = path.join("uploads", "documents", `${sessionId}_jd${path.extname(jdPath)}`);
-        fs.renameSync(jdPath, finalJdUrl);
+      if (tempFiles?.jd) {
+        const oldJdPath = path.join(process.cwd(), "uploads", "documents", tempFiles.jd);
+        if (fs.existsSync(oldJdPath)) {
+          finalJdUrl = path.join("uploads", "sessions", sessionId, `jd${path.extname(tempFiles.jd)}`);
+          fs.renameSync(oldJdPath, path.join(process.cwd(), finalJdUrl));
+        }
       }
-      
+
       db.prepare(`
         INSERT INTO sessions (
-          id, candidate_name, candidate_email, role, detected_level, level_reason, 
-          recruiter_email, status, key_skills, missing_skills, 
-          technical_stack, jd_match_score, analysis_summary, resume_blob_url, jd_blob_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, candidate_name, candidate_email, role, detected_level, level_reason,
+          recruiter_email, status, key_skills, missing_skills,
+          technical_stack, jd_match_score, analysis_summary, resume_blob_url, jd_blob_url,
+          scheduled_at, teams_meeting_url
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         sessionId, 
         analysis.candidateName || 'Candidate', 
-        analysis.candidateEmail || null,
+        finalCandidateEmail,
         role, 
         analysis.detectedLevel || 'fresher', 
         analysis.levelReason || '',
         recruiterEmail, 
-        "waiting", 
+        "scheduled", 
         JSON.stringify(analysis.keySkills || []), 
         JSON.stringify(analysis.missingSkills || []),
         JSON.stringify(analysis.technicalStack || []), 
         analysis.jdMatchScore || 0, 
         analysis.summaryForAgent || '',
         finalResumeUrl,
-        finalJdUrl
+        finalJdUrl,
+        scheduledAt,
+        teamsLink
       );
 
       const insertQ = db.prepare(`
@@ -340,18 +381,20 @@ Return ONLY a JSON array:
               candidateName: analysis.candidateName || 'Candidate',
               role,
               level: analysis.detectedLevel || 'fresher',
-              scheduledAt: null,
+              scheduledAt: scheduledAt,
               sessionId,
-              baseUrl
+              baseUrl,
+              teamsLink: teamsLink
             });
           }
-          if (analysis.candidateEmail) {
+          if (candidateEmail) {
             await emailService.sendCandidateInvite({
-              candidateEmail: analysis.candidateEmail,
+              candidateEmail: candidateEmail,
               candidateName: analysis.candidateName || 'Candidate',
               role,
               interviewLink: `${baseUrl}/candidate.html?session=${sessionId}`,
-              scheduledAt: null
+              scheduledAt: scheduledAt,
+              teamsLink: teamsLink
             });
           }
         } catch (err) {
@@ -382,8 +425,22 @@ app.use("/api/interview", interviewRoutes);
 // ═══════════════════════════════════════════════════════════════
 //  START
 // ═══════════════════════════════════════════════════════════════
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`\n  ✦ InterviewAI Agent running at http://localhost:${PORT}`);
   console.log(`  ✦ Upload folder : ./uploads`);
   console.log(`  ✦ Reports folder: ./reports\n`);
 });
+
+const io = require("socket.io")(server);
+app.set("io", io);
+
+// ═══════════════════════════════════════════════════════════════
+//  BACKGROUND JOBS
+// ═══════════════════════════════════════════════════════════════
+const { cleanupOldSessions } = require('./src/jobs/cleanup');
+
+// Run cleanup immediately on startup, then every 24 hours
+cleanupOldSessions(90).catch(err => console.error("Startup cleanup failed:", err));
+setInterval(() => {
+  cleanupOldSessions(90).catch(err => console.error("Scheduled cleanup failed:", err));
+}, 24 * 60 * 60 * 1000); // 24 hours

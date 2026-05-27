@@ -10,12 +10,12 @@ const router   = express.Router();
 
 const audioStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const dir = path.join(process.cwd(), "uploads", "recordings");
+    const { sessionId } = req.body;
+    const dir = path.join(process.cwd(), "uploads", "sessions", sessionId || "unknown");
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    // Save as session_id_question_id.webm
     const { sessionId, questionId } = req.body;
     cb(null, `${sessionId}_${questionId}_${Date.now()}.webm`);
   }
@@ -28,7 +28,6 @@ const claude     = require("../services/claudeService");
 const emailSvc   = require("../services/emailService");
 const reportSvc  = require("../services/reportService");
 
-// ══ State machine states ═══════════════════════════════════════════════════
 const STATUS = {
   WAITING:   "waiting",
   ACTIVE:    "active",
@@ -36,107 +35,74 @@ const STATUS = {
   NO_SHOW:   "no_show",
 };
 
-// ════════════════════════════════════════════════════════════════════════════
 //  GET /api/interview/session/:id
-//  Candidate loads the interview page — get session metadata
-// ════════════════════════════════════════════════════════════════════════════
-router.get("/session/:id", (req, res) => {
-  const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(req.params.id);
-  if (!session) return res.status(404).json({ error: "Interview session not found." });
-  if (session.status === "completed") return res.status(410).json({ error: "This interview has already been completed." });
-
-  const questions = db.prepare("SELECT id, question_number, topic, question_type, depth FROM questions WHERE session_id = ? ORDER BY question_number").all(req.params.id);
-
-  res.json({
-    success: true,
-    session: {
-      id:             session.id,
-      candidateName:  session.candidate_name,
-      role:           session.role,
-      detectedLevel:  session.detected_level,
-      levelReason:    session.level_reason,
-      status:         session.status,
-      scheduledAt:    session.scheduled_at,
-      totalQuestions: questions.length,
-    },
-    questionTopics: questions.map(q => ({ topic: q.topic, type: q.question_type })),
-  });
-});
-
-// ════════════════════════════════════════════════════════════════════════════
-//  POST /api/interview/start
-//  Candidate joins — generate AI opening, return first question
-// ════════════════════════════════════════════════════════════════════════════
-router.post("/start", async (req, res) => {
-  const { sessionId } = req.body;
-  const session       = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
-  if (!session) return res.status(404).json({ error: "Session not found" });
-  if (session.status === "completed") return res.status(410).json({ error: "Interview already completed" });
-
+router.get("/session/:id", async (req, res) => {
   try {
-    const questions = db.prepare("SELECT * FROM questions WHERE session_id = ? ORDER BY question_number").all(sessionId);
-    if (!questions.length) return res.status(400).json({ error: "No questions prepared for this session" });
+    const session = getSession(req.params.id);
+    if (!session) return res.status(404).json({ error: "Interview session not found." });
+    if (session.status === "completed") return res.status(410).json({ error: "This interview has already been completed." });
 
-    const firstQ = questions[0];
-
-    // Generate personalised opening
-    const opening = await claude.generateOpening(
-      session.candidate_name,
-      session.role,
-      session.detected_level,
-      firstQ.question_text
-    );
-
-    // Update session status
-    updateSession(sessionId, {
-      status:     STATUS.ACTIVE,
-      started_at: new Date().toISOString(),
-    });
-    insertAuditLog(sessionId, "INTERVIEW_STARTED");
-
-    // Emit to HR dashboard via Socket.io
-    req.app.get("io")?.to(`session:${sessionId}`).emit("session:update", {
-      status: "active",
-      candidateName: session.candidate_name,
-    });
-
-    logger.info("Interview started", { sessionId, candidateName: session.candidate_name });
+    const questions = db.prepare("SELECT * FROM questions WHERE session_id = ? ORDER BY question_number ASC").all(req.params.id);
 
     res.json({
-      success:  true,
-      opening,
-      question: {
-        id:       firstQ.id,
-        number:   1,
-        text:     firstQ.question_text,
-        type:     firstQ.question_type,
-        topic:    firstQ.topic,
-        depth:    firstQ.depth,
+      success: true,
+      session: {
+        id:             session.id,
+        candidateName:  session.candidate_name,
+        role:           session.role,
+        detectedLevel:  session.detected_level,
+        levelReason:    session.level_reason,
+        status:         session.status,
+        scheduledAt:    session.scheduled_at,
+        totalQuestions: questions.length,
       },
-      progress: { current: 1, total: questions.length },
-      totalQuestions: questions.length,
+      questionTopics: questions.map(q => ({ topic: q.topic, type: q.question_type })),
     });
-
-  } catch (err) {
-    logger.error("/interview/start failed", { sessionId, error: err.message });
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-//  POST /api/interview/consent
-//  Candidate gave verbal consent — return bridge + first question
-// ════════════════════════════════════════════════════════════════════════════
-router.post("/consent", async (req, res) => {
-  const { sessionId } = req.body;
-  const session       = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
-  if (!session) return res.status(404).json({ error: "Session not found" });
-
+//  POST /api/interview/start
+router.post("/start", async (req, res) => {
   try {
-    const firstQ = db.prepare("SELECT * FROM questions WHERE session_id = ? ORDER BY question_number LIMIT 1").get(sessionId);
+    const { sessionId, qNum } = req.body;
+    if (!sessionId || !qNum) return res.status(400).json({ error: "Missing session or question num" });
+
+    const session = getSession(sessionId);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    // Mark as started if first question
+    if (qNum === 1 && session.status !== "active") {
+      updateSession(sessionId, { status: "active", started_at: new Date().toISOString() });
+      insertAuditLog(sessionId, "INTERVIEW_STARTED");
+      req.app.get("io")?.to(`session:${sessionId}`).emit("session:update", { status: "active" });
+    }
+
+    const question = db.prepare("SELECT * FROM questions WHERE session_id = ? AND question_number = ?").get(sessionId, qNum);
+    if (!question) return res.status(404).json({ error: "Question not found" });
+
+    res.json({
+      success: true,
+      question: {
+        number: question.question_number,
+        text:   question.question_text,
+        type:   question.question_type,
+        topic:  question.topic,
+      }
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+//  POST /api/interview/consent
+router.post("/consent", async (req, res) => {
+  try {
+    const { sessionId } = req.body;
+    const session = getSession(sessionId);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const firstQ = db.prepare("SELECT * FROM questions WHERE session_id = ? ORDER BY question_number ASC LIMIT 1").get(sessionId);
     const bridge = await claude.generateConsentBridge(session.candidate_name, firstQ.question_text);
 
-    insertAuditLog(sessionId, "CONSENT_GIVEN");
+    await insertAuditLog(sessionId, "CONSENT_GIVEN");
 
     res.json({
       success: true,
@@ -150,191 +116,131 @@ router.post("/consent", async (req, res) => {
         depth:  firstQ.depth,
       },
     });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ════════════════════════════════════════════════════════════════════════════
 //  POST /api/interview/answer
-//  Core: receive answer → evaluate → decide follow-up or next question
-// ════════════════════════════════════════════════════════════════════════════
 router.post("/answer", async (req, res) => {
-  const { sessionId, questionId, answerText, isFollowup = false, followupOf = null } = req.body;
-
+  const { sessionId, qNum, qText, answerText, isFollowup = false } = req.body;
   if (!answerText?.trim()) return res.status(400).json({ error: "Answer cannot be empty" });
 
-  const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
-  if (!session) return res.status(404).json({ error: "Session not found" });
-  if (session.status !== STATUS.ACTIVE) return res.status(400).json({ error: "Interview not active" });
-
-  const question = db.prepare("SELECT * FROM questions WHERE id = ?").get(questionId);
-  if (!question) return res.status(404).json({ error: "Question not found" });
-
   try {
-    // Previous answers for context
-    const prevAnswers = db.prepare(
-      "SELECT question_text, answer_text FROM answers WHERE session_id = ? ORDER BY rowid DESC LIMIT 3"
-    ).all(sessionId).reverse();
+    const session = getSession(sessionId);
+    if (!session) return res.status(404).json({ error: "Session not found" });
 
-    // ── Claude evaluates the answer ───────────────────────────────────────
-    const evaluation = await claude.evaluateAnswer(
+    let question = db.prepare("SELECT * FROM questions WHERE session_id = ? AND question_number = ?").get(sessionId, qNum);
+    if (!question) return res.status(404).json({ error: "Question not found" });
+
+    // Ensure scoringCriteria and followupTriggers are objects/arrays
+    question.scoring_criteria = question.scoring_criteria ? JSON.parse(question.scoring_criteria) : {};
+    question.followup_triggers = question.followup_triggers ? JSON.parse(question.followup_triggers) : [];
+
+    let prevAnswers = db.prepare("SELECT * FROM answers WHERE session_id = ? ORDER BY answered_at DESC LIMIT 3").all(sessionId).reverse();
+
+    const evalData = await claude.evaluateAnswer(
       {
         id:              question.id,
-        questionText:    question.question_text,
+        questionText:    qText,
         type:            question.question_type,
         targetSkill:     question.target_skill,
-        followupTriggers: JSON.parse(question.followup_triggers || "[]"),
-        scoringCriteria:  JSON.parse(question.scoring_criteria || "{}"),
+        followupTriggers: question.followup_triggers || [],
+        scoringCriteria:  question.scoring_criteria || {},
       },
       answerText,
       session.detected_level,
       prevAnswers
     );
 
-    // ── Store answer ──────────────────────────────────────────────────────
-    const answerId = uuid();
-    const followupScore = parseFloat(process.env.FOLLOWUP_SCORE_TRIGGER || "5.0");
-    const maxFollowups  = parseInt(process.env.MAX_FOLLOWUPS_PER_QUESTION || "2");
+    const needsFollowup = evalData.needsFollowup;
+    const isLast = !evalData.needsFollowup && qNum >= db.prepare("SELECT COUNT(*) as count FROM questions WHERE session_id = ?").get(sessionId).count;
 
     db.prepare(`
       INSERT INTO answers (
         id, session_id, question_id, question_number, question_text, answer_text,
-        is_followup, followup_trigger,
-        technical_score, depth_score, clarity_score, problem_solving_score, overall_score,
-        evaluation_note, keywords_detected, needs_followup, followup_question, followup_reason
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        is_followup, followup_trigger, technical_score, depth_score, clarity_score, problem_solving_score, overall_score,
+        evaluation_note, keywords_detected, needs_followup, followup_question, followup_reason, answered_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `).run(
-      answerId, sessionId,
-      question.id, question.question_number, question.question_text, answerText,
-      isFollowup ? 1 : 0, req.body.followupTrigger || null,
-      evaluation.technicalScore, evaluation.depthScore, evaluation.clarityScore,
-      evaluation.problemSolvingScore, evaluation.overallScore,
-      evaluation.internalNote, JSON.stringify(evaluation.keywordsDetected || []),
-      evaluation.needsFollowup ? 1 : 0, evaluation.followupQuestion, evaluation.followupReason,
+      uuid(), sessionId, question.id, isFollowup ? null : qNum, qText, answerText,
+      isFollowup ? 1 : 0, null,
+      evalData.scores.technical, evalData.scores.depth, evalData.scores.clarity, evalData.scores.problemSolving, evalData.overallScore,
+      evalData.evaluationNote, JSON.stringify(evalData.keywordsDetected || []),
+      needsFollowup ? 1 : 0, evalData.followup?.question || null, evalData.followup?.reason || null
     );
 
-    // ── Count follow-ups already asked on this question ───────────────────
-    const followupCount = db.prepare(
-      "SELECT COUNT(*) as cnt FROM answers WHERE session_id = ? AND question_id = ? AND is_followup = 1"
-    ).get(sessionId, question.id)?.cnt || 0;
-
-    const shouldFollowup = (
-      !isFollowup &&
-      evaluation.needsFollowup &&
-      evaluation.overallScore < followupScore &&
-      followupCount < maxFollowups
-    );
-
-    // ── Get all questions to find next ────────────────────────────────────
-    const allQuestions = db.prepare("SELECT * FROM questions WHERE session_id = ? ORDER BY question_number").all(sessionId);
-    const currentIdx   = allQuestions.findIndex(q => q.id === question.id);
-    const nextQuestion = allQuestions[currentIdx + 1] || null;
-    const isLast       = !nextQuestion;
-
-    // ── Emit live score update to HR dashboard ────────────────────────────
-    req.app.get("io")?.to(`session:${sessionId}`).emit("interview:score", {
-      questionNumber: question.question_number,
-      score:          evaluation.overallScore,
-      technical:      evaluation.technicalScore,
-      clarity:        evaluation.clarityScore,
-      depth:          evaluation.depthScore,
-    });
-
-    // ── Action decision ───────────────────────────────────────────────────
-    if (shouldFollowup) {
-      insertAuditLog(sessionId, "FOLLOWUP_TRIGGERED", evaluation.followupReason);
-      return res.json({
-        success:    true,
-        evaluation: { score: evaluation.overallScore, acknowledgment: evaluation.acknowledgment },
-        action:     "followup",
-        followup: {
-          question:  evaluation.followupQuestion,
-          reason:    evaluation.followupReason,
-          trigger:   (evaluation.keywordsDetected || [])[0] || "",
-          parentId:  question.id,
-        },
-        progress: { current: question.question_number, total: allQuestions.length },
+    // Live update HR
+    const io = req.app.get("io");
+    if (io) {
+      io.to(`session:${sessionId}`).emit("interview:score", {
+        qNum: isFollowup ? `${qNum}.F` : qNum,
+        score: evalData.overallScore,
+        note: evalData.evaluationNote,
       });
     }
 
-    if (isLast) {
-      // Trigger async report generation
-      setImmediate(() => generateReportAsync(sessionId, req.app.get("io")));
-      return res.json({
-        success:    true,
-        evaluation: { score: evaluation.overallScore, acknowledgment: evaluation.acknowledgment },
-        action:     "complete",
-        closing:    `${evaluation.acknowledgment} That brings us to the end of our interview, ${session.candidate_name}. Thank you so much for your time. I'm now generating your evaluation report — our HR team will be in touch shortly.`,
-        progress:   { current: allQuestions.length, total: allQuestions.length },
-      });
+    if (!needsFollowup && isLast) {
+      updateSession(sessionId, { status: "completed" });
+      generateReportAsync(sessionId, io); // Fire and forget
     }
 
     return res.json({
-      success:      true,
-      evaluation:   { score: evaluation.overallScore, acknowledgment: evaluation.acknowledgment },
-      action:       "next",
-      nextQuestion: {
-        id:     nextQuestion.id,
-        number: nextQuestion.question_number,
-        text:   nextQuestion.question_text,
-        type:   nextQuestion.question_type,
-        topic:  nextQuestion.topic,
-        depth:  nextQuestion.depth,
-      },
-      progress: { current: nextQuestion.question_number, total: allQuestions.length },
+      success:    true,
+      evaluation: { score: evalData.overallScore, acknowledgment: evalData.acknowledgment },
+      action:     needsFollowup ? "followup" : (isLast ? "complete" : "next"),
+      followup:   needsFollowup ? { question: evalData.followup.question, reason: evalData.followup.reason } : null
     });
-
-  } catch (err) {
-    logger.error("/interview/answer failed", { sessionId, error: err.message });
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-//  POST /api/interview/audio
-//  Candidate uploads raw audio blob for a question (T6.1 fallback)
-// ════════════════════════════════════════════════════════════════════════════
 router.post("/audio", uploadAudio.single("audio"), (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No audio file provided" });
+  
+  const { sessionId, qNum, isFollowup } = req.body;
+  if (sessionId && qNum) {
+    try {
+      db.prepare(`
+        UPDATE answers 
+        SET audio_url = ? 
+        WHERE session_id = ? AND question_number = ? AND is_followup = ?
+      `).run(req.file.path, sessionId, parseInt(qNum), isFollowup === 'true' ? 1 : 0);
+    } catch (err) {
+      console.error("Failed to link audio to answer:", err);
+    }
+  }
+  
   res.json({ success: true, path: req.file.path });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-//  POST /api/interview/edge-case
-//  Handle silence, "I don't know", confusion
-// ════════════════════════════════════════════════════════════════════════════
 router.post("/edge-case", async (req, res) => {
-  const { situation, questionText } = req.body;
   try {
-    const response = await claude.generateEdgeCaseResponse(situation, questionText);
+    const response = await claude.generateEdgeCaseResponse(req.body.situation, req.body.questionText);
     res.json({ success: true, response });
-  } catch (err) {
-    res.json({ success: true, response: "Take your time — whenever you're ready." });
-  }
+  } catch (err) { res.json({ success: true, response: "Take your time — whenever you're ready." }); }
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-//  POST /api/interview/no-show
-//  Called if candidate doesn't join within X minutes
-// ════════════════════════════════════════════════════════════════════════════
 router.post("/no-show", async (req, res) => {
-  const { sessionId } = req.body;
-  const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
-  if (!session) return res.status(404).json({ error: "Session not found" });
+  try {
+    const { sessionId } = req.body;
+    const session = db.prepare("SELECT * FROM sessions WHERE id = ?").get(sessionId);
+    if (!session) return res.status(404).json({ error: "Session not found" });
 
-  updateSession(sessionId, { status: "no_show" });
-  insertAuditLog(sessionId, "NO_SHOW");
-  req.app.get("io")?.to(`session:${sessionId}`).emit("session:update", { status: "no_show" });
+    updateSession(sessionId, { status: "no_show" });
+    insertAuditLog(sessionId, "NO_SHOW");
+    req.app.get("io")?.to(`session:${sessionId}`).emit("session:update", { status: "no_show" });
 
-  // TODO: Optionally trigger reschedule email here
-
-  res.json({ success: true });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-//  Async report generation (called after last answer)
-// ════════════════════════════════════════════════════════════════════════════
+router.post("/integrity", async (req, res) => {
+  try {
+    const { sessionId, eventType, detail } = req.body;
+    if (!sessionId) return res.status(400).json({ error: "No session ID provided" });
+    insertAuditLog(sessionId, eventType || "INTEGRITY_ALERT", detail || "Candidate switched tabs or minimized window");
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 async function generateReportAsync(sessionId, io) {
   try {
     logger.info("Generating report...", { sessionId });
@@ -344,16 +250,13 @@ async function generateReportAsync(sessionId, io) {
     const answers   = db.prepare("SELECT * FROM answers WHERE session_id = ? ORDER BY rowid").all(sessionId);
     const scores    = answers.filter(a => !a.is_followup);
 
-    // Build transcript for Claude
-    const transcript = answers.map(a => ({
-      role: "ai",
-      text: a.question_text,
-    })).flatMap((q, i) => [q, { role: "candidate", text: answers[i]?.answer_text || "" }]).filter(t => t.text);
+    const transcript = answers.flatMap(a => [
+      { role: "ai", text: a.question_text, timestamp: a.answered_at },
+      { role: "candidate", text: a.answer_text || "", timestamp: a.answered_at }
+    ]).filter(t => t.text);
 
-    // Claude generates final report
     const reportData = await claude.generateFinalReport(session, questions, answers, scores);
 
-    // Store report
     const reportId = uuid();
     db.prepare(`
       INSERT INTO reports (
@@ -375,10 +278,9 @@ async function generateReportAsync(sessionId, io) {
       reportData.rejectionRationale || null,
       reportData.improvementSuggestions || null,
       JSON.stringify(transcript),
-      JSON.stringify(reportData.failedQuestions || []),
+      JSON.stringify(reportData.failedQuestions || [])
     );
 
-    // Generate PDF
     const report = db.prepare("SELECT * FROM reports WHERE id = ?").get(reportId);
     const { pdfPath, htmlPath } = await reportSvc.generateReportPDF(session, report, answers, transcript);
 
@@ -386,7 +288,6 @@ async function generateReportAsync(sessionId, io) {
       db.prepare("UPDATE reports SET report_pdf_url = ? WHERE id = ?").run(pdfPath, reportId);
     }
 
-    // Mark session complete
     updateSession(sessionId, {
       status:           "completed",
       ended_at:         new Date().toISOString(),
@@ -402,7 +303,6 @@ async function generateReportAsync(sessionId, io) {
       reportUrl:    `/api/hr/report/${sessionId}`,
     });
 
-    // Email report to recruiter
     const baseUrl      = process.env.BASE_URL || "http://localhost:3000";
     const pdfBuffer    = pdfPath ? require("fs").readFileSync(pdfPath) : null;
     if (session.recruiter_email) {
@@ -410,23 +310,12 @@ async function generateReportAsync(sessionId, io) {
         recruiterEmail: session.recruiter_email,
         candidateName:  session.candidate_name,
         role:           session.role,
-        report: {
-          ...reportData,
-          overall_score: reportData.overallScore,
-          technical_avg: reportData.technicalAvg,
-          clarity_avg:   reportData.clarityAvg,
-          depth_avg:     reportData.depthAvg,
-          hiringJustification: reportData.hiringJustification,
-          rejectionRationale:  reportData.rejectionRationale,
-        },
-        reportUrl:     `${baseUrl}/report.html?session=${sessionId}`,
-        transcriptUrl: `${baseUrl}/api/hr/transcript/${sessionId}`,
+        verdict:        reportData.verdict,
+        reportUrl:      `${baseUrl}/api/hr/report/${sessionId}`,
+        transcriptUrl:  `${baseUrl}/api/hr/transcript/${sessionId}`,
         pdfBuffer,
       });
     }
-
-    logger.info("Report complete and emailed", { sessionId, verdict: reportData.verdict });
-
   } catch (err) {
     logger.error("Async report generation failed", { sessionId, error: err.message });
     updateSession(sessionId, { status: "completed" });

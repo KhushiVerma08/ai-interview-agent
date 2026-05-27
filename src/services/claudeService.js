@@ -29,21 +29,30 @@ function parseJSON(text) {
   }
 }
 
-async function call(model, system, userContent, maxTokens = 1500) {
-  if (anthropicClient) {
-    const res = await anthropicClient.messages.create({
-      model: model === SMART_MODEL ? "claude-3-5-sonnet-20241022" : model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: userContent }],
-    });
-    return res.content[0].text;
-  } else if (geminiClient) {
-    const geminiModel = geminiClient.getGenerativeModel({ model: "gemini-2.0-flash", systemInstruction: system });
-    const result = await geminiModel.generateContent(userContent);
-    return result.response.text();
-  } else {
-    throw new Error("No AI API configured. Please provide ANTHROPIC_API_KEY or GEMINI_API_KEY in .env");
+async function call(model, system, userContent, maxTokens = 1500, retries = 3) {
+  try {
+    if (anthropicClient) {
+      const res = await anthropicClient.messages.create({
+        model: model === SMART_MODEL ? "claude-3-5-sonnet-20241022" : model,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: "user", content: userContent }],
+      });
+      return res.content[0].text;
+    } else if (geminiClient) {
+      const geminiModel = geminiClient.getGenerativeModel({ model: "gemini-flash-latest", systemInstruction: system });
+      const result = await geminiModel.generateContent(userContent);
+      return result.response.text();
+    } else {
+      throw new Error("No AI API configured. Please provide ANTHROPIC_API_KEY or GEMINI_API_KEY in .env");
+    }
+  } catch (error) {
+    if (error.message && error.message.includes('429') && retries > 0) {
+      logger.warn(`Gemini API rate limit hit (429). Retrying in 10 seconds... (${retries} retries left)`);
+      await new Promise(resolve => setTimeout(resolve, 10000));
+      return call(model, system, userContent, maxTokens, retries - 1);
+    }
+    throw error;
   }
 }
 
@@ -234,6 +243,9 @@ SCORING RUBRIC (weighted):
 - clarityScore (20%): communication quality, structure, examples used
 - problemSolvingScore (10%): structured thinking, edge cases, trade-offs considered
 
+CRITICAL REQUIREMENT FOR FOLLOW-UPS:
+If the answer is vague, surface-level, or mentions a specific technology/keyword, you MUST extract that keyword and ask a direct follow-up challenging them on it. For example: "You mentioned using Redis for caching. How would you ensure Redis data persistence?" Probe if their keyword is smart and relevant to the actual job.
+
 Return ONLY this JSON:
 {
   "technicalScore": <1-10>,
@@ -243,7 +255,7 @@ Return ONLY this JSON:
   "overallScore": <weighted average>,
   "keywordsDetected": ["keyword found that is worth probing"],
   "needsFollowup": <true|false>,
-  "followupQuestion": "specific targeted follow-up question referencing something they actually said",
+  "followupQuestion": "specific targeted follow-up question referencing a keyword they actually said",
   "followupReason": "which keyword/claim triggered this follow-up and why it matters",
   "internalNote": "one sentence recruiter note — what this answer reveals about the candidate",
   "acknowledgment": "1-2 sentence natural interviewer response before next question (do not repeat the question or be sycophantic)"
