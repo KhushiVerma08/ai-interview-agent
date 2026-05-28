@@ -11,3 +11,6 @@ data/
 *.db-wal
 test_*
 migrate.js
+
+venv/
+__pycache__/
