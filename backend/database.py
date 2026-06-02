@@ -27,13 +27,6 @@ def get_db():
 
 # ─── Schema Models ─────────────────────────────────────────────────────────────
 
-class HRUser(Base):
-    __tablename__ = "hr_users"
-    id = Column(String, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    name = Column(String, nullable=False)
-    created_at = Column(String)
-
 class Session(Base):
     __tablename__ = "sessions"
     id = Column(String, primary_key=True, index=True)
@@ -57,6 +50,7 @@ class Session(Base):
     teams_meeting_url = Column(String)
     teams_meeting_id = Column(String)
     interview_link = Column(String)
+    current_question_index = Column(Integer, default=1)
     scheduled_at = Column(String)
     started_at = Column(String)
     ended_at = Column(String)
@@ -71,6 +65,7 @@ class Question(Base):
     question_number = Column(Integer, nullable=False)
     question_text = Column(String, nullable=False)
     question_type = Column(String)
+    status = Column(String, default="pending") # pending, asked, covered_early, skipped
     topic = Column(String)
     depth = Column(String)
     target_skill = Column(String)
@@ -92,6 +87,8 @@ class Answer(Base):
     depth_score = Column(Float)
     clarity_score = Column(Float)
     problem_solving_score = Column(Float)
+    confidence_score = Column(Float)
+    communication_score = Column(Float)
     overall_score = Column(Float)
     evaluation_note = Column(String)
     keywords_detected = Column(String)
@@ -110,6 +107,9 @@ class Report(Base):
     depth_avg = Column(Float)
     clarity_avg = Column(Float)
     problem_solving_avg = Column(Float)
+    confidence_avg = Column(Float)
+    communication_avg = Column(Float)
+    competency_score = Column(Float)
     verdict = Column(String)
     verdict_confidence = Column(Integer)
     executive_summary = Column(String)
@@ -122,33 +122,6 @@ class Report(Base):
     failed_questions = Column(String)
     report_pdf_url = Column(String)
     generated_at = Column(String)
-
-class AuditLog(Base):
-    __tablename__ = "audit_log"
-    id = Column(String, primary_key=True, index=True)
-    session_id = Column(String)
-    event = Column(String, nullable=False)
-    detail = Column(String)
-    created_at = Column(String)
-
-class InterviewSession(Base):
-    __tablename__ = "interview_sessions"
-    session_id = Column(String, primary_key=True, index=True)
-    candidate_name = Column(String)
-    recall_bot_id = Column(String)
-    current_question_index = Column(Integer, default=0)
-    interview_status = Column(String, default="Scheduled")
-
-class InterviewQuestion(Base):
-    __tablename__ = "interview_questions"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, index=True)
-    question_order = Column(Integer)
-    question_type = Column(String)
-    question_text = Column(String)
-    candidate_answer = Column(String, nullable=True)
-    score = Column(Integer, nullable=True)
-    follow_up_count = Column(Integer, default=0)
 
 # Initialize tables (since this app relies on auto-creating tables)
 Base.metadata.create_all(bind=engine)

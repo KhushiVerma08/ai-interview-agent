@@ -4,14 +4,21 @@ import uuid
 import json
 import asyncio
 from typing import Optional, List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+IST = timezone(timedelta(hours=5, minutes=30))
+def ist_now():
+    return datetime.now(IST)
+
 from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks, Body
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from database import get_db, Session as DbSession, Question as DbQuestion, Answer as DbAnswer, Report as DbReport, AuditLog, InterviewSession, InterviewQuestion
+from database import get_db, Session as DbSession, Question as DbQuestion, Answer as DbAnswer, Report as DbReport
 from services.pdf import extract_text
 from services.claude import analyze_documents, generate_question_plan, evaluate_answer, generate_final_report, generate_opening, generate_consent_bridge, generate_edge_case_response, generate_dynamic_followup
+from services.email import send_meeting_invite
+from services.teams import create_teams_meeting
 
 app = FastAPI(title="AI Interview Agent API")
 
@@ -71,43 +78,62 @@ async def analyse(
     }
 
 @app.post("/api/schedule")
-async def schedule(payload: Dict[Any, Any], db: Session = Depends(get_db)):
-    analysis = payload.get("analysis")
+async def schedule_interview(payload: Dict[Any, Any], background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    analysis = payload.get("analysis", {})
     role = payload.get("role", "Software Engineer")
-    q_count = payload.get("questionCount", 12)
-    temp_files = payload.get("tempFiles", {})
+    question_count = payload.get("questionCount", 12)
+    temp_files = payload.get("tempFiles")
+    confirmed_email = payload.get("confirmedEmail")
 
-    questions = await generate_question_plan(analysis, role, q_count)
+    if not confirmed_email and not analysis.get("candidateEmail"):
+        raise HTTPException(status_code=400, detail="Candidate email is missing")
+
     session_id = str(uuid.uuid4())
-    session_folder = os.path.join(SESSION_DIR, session_id)
-    os.makedirs(session_folder, exist_ok=True)
+    questions = await generate_question_plan(analysis, role, question_count)
 
     jd_url, resume_url = None, None
-    if temp_files.get("jd"):
-        src = os.path.join(UPLOAD_DIR, temp_files["jd"])
-        if os.path.exists(src):
-            shutil.move(src, os.path.join(session_folder, temp_files["jd"]))
+    jd_text_val, resume_text_val = "", ""
+    if temp_files:
+        session_folder = os.path.join(SESSION_DIR, session_id)
+        os.makedirs(session_folder, exist_ok=True)
+        
+        src_jd = os.path.join(UPLOAD_DIR, temp_files["jd"]) if temp_files.get("jd") else None
+        if src_jd and os.path.exists(src_jd):
+            jd_text_val = extract_text(src_jd)
+            shutil.move(src_jd, os.path.join(session_folder, temp_files["jd"]))
             jd_url = f"/uploads/sessions/{session_id}/{temp_files['jd']}"
-    if temp_files.get("resume"):
-        src = os.path.join(UPLOAD_DIR, temp_files["resume"])
-        if os.path.exists(src):
-            shutil.move(src, os.path.join(session_folder, temp_files["resume"]))
+            
+        src_resume = os.path.join(UPLOAD_DIR, temp_files["resume"]) if temp_files.get("resume") else None
+        if src_resume and os.path.exists(src_resume):
+            resume_text_val = extract_text(src_resume)
+            shutil.move(src_resume, os.path.join(session_folder, temp_files["resume"]))
             resume_url = f"/uploads/sessions/{session_id}/{temp_files['resume']}"
+
+    scheduled_at = (ist_now() + timedelta(minutes=30)).isoformat()
+    # Generate Microsoft Teams Meeting
+    subject = f"AI Interview: {analysis.get('candidateName', 'Candidate')} - {role}"
+    teams_meeting = create_teams_meeting(subject, scheduled_at)
 
     db_session = DbSession(
         id=session_id,
         candidate_name=analysis.get("candidateName") or "Candidate",
-        candidate_email=analysis.get("candidateEmail"),
+        candidate_email=confirmed_email or analysis.get("candidateEmail"),
         role=role,
         detected_level=analysis.get("detectedLevel") or "fresher",
         status="scheduled",
+        jd_text=jd_text_val,
+        resume_text=resume_text_val,
         jd_blob_url=jd_url,
         resume_blob_url=resume_url,
         key_skills=json.dumps(analysis.get("resumeInfo", {}).get("skills", [])),
         missing_skills=json.dumps(analysis.get("gapAnalysis", {}).get("missingSkills", [])),
         jd_match_score=analysis.get("gapAnalysis", {}).get("matchScore"),
         interview_link=f"/candidate?session={session_id}",
-        created_at=datetime.utcnow().isoformat()
+        teams_meeting_url=teams_meeting.get("joinUrl"),
+        teams_meeting_id=teams_meeting.get("meetingId"),
+        scheduled_at=scheduled_at,
+        created_at=ist_now().isoformat(),
+        current_question_index=1
     )
     db.add(db_session)
 
@@ -123,45 +149,74 @@ async def schedule(payload: Dict[Any, Any], db: Session = Depends(get_db)):
             target_skill=q.get("targetSkill"),
             scoring_criteria=json.dumps(q.get("scoringCriteria", {})),
             followup_triggers=json.dumps(q.get("followupTriggers", [])),
-            created_at=datetime.utcnow().isoformat()
+            created_at=ist_now().isoformat()
         ))
-        
-        # New: Populate InterviewQuestion (stateless orchestration table)
-        from database import InterviewQuestion
-        db.add(InterviewQuestion(
-            session_id=session_id,
-            question_order=i+1,
-            question_type=q.get("type"),
-            question_text=q.get("questionText")
-        ))
-    
-    # New: Populate InterviewSession
-    from database import InterviewSession
-    db.add(InterviewSession(
-        session_id=session_id,
-        candidate_name=analysis.get("candidateName") or "Candidate",
-        recall_bot_id="TBD_BOT_ID",
-        current_question_index=1, # Starting at 1
-        interview_status="Scheduled"
-    ))
 
     db.commit()
+
+    # Trigger email dispatch in the background
+    background_tasks.add_task(
+        send_meeting_invite,
+        to_email=db_session.candidate_email,
+        candidate_name=db_session.candidate_name,
+        meeting_link=db_session.interview_link,
+        teams_link=db_session.teams_meeting_url,
+        scheduled_at=db_session.scheduled_at
+    )
 
     return {"success": True, "sessionId": session_id, "interviewLink": db_session.interview_link}
 
 @app.get("/api/hr/sessions")
 def get_sessions(db: Session = Depends(get_db)):
-    from database import InterviewSession
     sessions = db.query(DbSession).order_by(DbSession.created_at.desc()).all()
     results = []
+    
+    # Auto-cancel logic for stale scheduled sessions
+    now = ist_now().replace(tzinfo=None)
+    commit_needed = False
+    
     for s in sessions:
-        i_session = db.query(InterviewSession).filter(InterviewSession.session_id == s.id).first()
-        status = i_session.interview_status if i_session else s.status
+        display_status = s.status.lower() if s.status else "scheduled"
+        if display_status == "active":
+            display_status = "in_progress"
+        elif display_status == "waiting":
+            display_status = "scheduled"
+
+        if display_status == "scheduled":
+            # Fallback to created_at if scheduled_at doesn't exist
+            timestamp_to_check = s.scheduled_at or s.created_at
+            if timestamp_to_check:
+                try:
+                    time_str = timestamp_to_check.replace("Z", "+00:00")
+                    scheduled_time = datetime.fromisoformat(time_str).replace(tzinfo=None)
+                    if now - scheduled_time > timedelta(hours=24):
+                        s.status = "cancelled"
+                        display_status = "cancelled"
+                        commit_needed = True
+                except ValueError:
+                    pass
+        elif display_status == "in_progress":
+            timestamp_to_check = s.started_at or s.created_at
+            if timestamp_to_check:
+                try:
+                    time_str = timestamp_to_check.replace("Z", "+00:00")
+                    started_time = datetime.fromisoformat(time_str).replace(tzinfo=None)
+                    if now - started_time > timedelta(hours=2):
+                        s.status = "failed"
+                        display_status = "failed"
+                        commit_needed = True
+                except ValueError:
+                    pass
+                
         results.append({
             "id": s.id, "candidate_name": s.candidate_name, "role": s.role, 
-            "status": status, "detected_level": s.detected_level,
+            "status": display_status, "detected_level": s.detected_level,
             "created_at": s.created_at, "interview_link": s.interview_link
         })
+        
+    if commit_needed:
+        db.commit()
+        
     return results
 
 @app.get("/api/hr/session/{session_id}")
@@ -199,11 +254,19 @@ def get_interview_session(session_id: str, db: Session = Depends(get_db)):
 async def start_interview(payload: Dict[Any, Any], db: Session = Depends(get_db)):
     s = db.query(DbSession).filter(DbSession.id == payload.get("sessionId")).first()
     if not s: raise HTTPException(status_code=404)
-    q = db.query(DbQuestion).filter(DbQuestion.session_id == s.id, DbQuestion.question_number == payload.get("qNum")).first()
     
-    if payload.get("qNum") == 1 and s.status != "active":
-        s.status = "active"
-        s.started_at = datetime.utcnow().isoformat()
+    # Fetch the lowest pending question
+    q = db.query(DbQuestion).filter(
+        DbQuestion.session_id == s.id, 
+        DbQuestion.status == 'pending'
+    ).order_by(DbQuestion.question_number).first()
+    
+    if not q:
+        return {"success": True, "action": "complete"}
+    
+    if q.question_number == 1 and s.status != "in_progress":
+        s.status = "in_progress"
+        s.started_at = ist_now().isoformat()
         db.commit()
         
     return {"success": True, "question": {"number": q.question_number, "text": q.question_text}}
@@ -215,27 +278,89 @@ async def answer_question(payload: Dict[Any, Any], bg_tasks: BackgroundTasks, db
     s = db.query(DbSession).filter(DbSession.id == sid).first()
     q = db.query(DbQuestion).filter(DbQuestion.session_id == sid, DbQuestion.question_number == q_num).first()
     
+    if q and q.status == 'pending':
+        q.status = 'asked'
+        
+    upcoming_qs = db.query(DbQuestion).filter(
+        DbQuestion.session_id == sid, 
+        DbQuestion.status == 'pending',
+        DbQuestion.question_number > q_num
+    ).all()
+    
+    upcoming_dicts = [{"id": u.id, "questionText": u.question_text, "targetSkill": u.target_skill} for u in upcoming_qs]
+    
     eval_res = await evaluate_answer(
-        {"questionText": payload.get("qText"), "scoringCriteria": json.loads(q.scoring_criteria)},
+        {"questionText": payload.get("qText"), "scoringCriteria": json.loads(q.scoring_criteria if q and q.scoring_criteria else "{}")},
         ans_text,
-        s.detected_level
+        s.detected_level,
+        upcoming_questions=upcoming_dicts
     )
     
+    # Mark covered questions as skipped
+    covered_ids = eval_res.get("coveredUpcomingQuestionIds", [])
+    if covered_ids:
+        for uq in upcoming_qs:
+            if uq.id in covered_ids:
+                uq.status = 'covered_early'
+                
     db_ans = DbAnswer(
-        id=str(uuid.uuid4()), session_id=sid, question_id=q.id, question_number=q_num,
+        id=str(uuid.uuid4()), session_id=sid, question_id=q.id if q else None, question_number=q_num,
         question_text=payload.get("qText"), answer_text=ans_text,
+        technical_score=eval_res.get("technicalScore"),
+        depth_score=eval_res.get("depthScore"),
+        clarity_score=eval_res.get("clarityScore"),
+        problem_solving_score=eval_res.get("problemSolvingScore"),
+        confidence_score=eval_res.get("confidenceScore"),
+        communication_score=eval_res.get("communicationScore"),
         overall_score=eval_res.get("overallScore"),
         evaluation_note=eval_res.get("internalNote"),
-        answered_at=datetime.utcnow().isoformat()
+        answered_at=ist_now().isoformat()
     )
     db.add(db_ans)
     
-    total_q = db.query(DbQuestion).filter(DbQuestion.session_id == sid).count()
-    is_last = q_num >= total_q
+    if eval_res.get("needsFollowup") and eval_res.get("followupQuestion"):
+        # Count existing followups for this question to increment the decimal properly
+        existing_followups = db.query(DbQuestion).filter(
+            DbQuestion.session_id == sid, 
+            DbQuestion.question_number > q_num, 
+            DbQuestion.question_number < q_num + 1
+        ).count()
+        followup_q_num = q_num + 0.1 + (existing_followups * 0.01)
+        
+        followup_q = DbQuestion(
+            id=str(uuid.uuid4()), session_id=sid, question_number=followup_q_num,
+            question_text=eval_res.get("followupQuestion"),
+            question_type="followup", topic="Follow-up Probe", target_skill="depth",
+            status="pending", scoring_criteria='{"good": "Directly addresses the follow-up probe", "poor": "Fails to provide clarity on the requested detail"}'
+        )
+        db.add(followup_q)
+        
+    db.commit()
+    
+    remaining_pending = db.query(DbQuestion).filter(DbQuestion.session_id == sid, DbQuestion.status == 'pending').count()
+    total_answers = db.query(DbAnswer).filter(DbAnswer.session_id == sid).count()
+    
+    if remaining_pending == 0:
+        if total_answers < 7:
+            # Generate a dynamic question on the fly to meet the minimum of 7
+            new_q_num = db.query(DbQuestion).filter(DbQuestion.session_id == sid).count() + 1
+            dynamic_q = DbQuestion(
+                id=str(uuid.uuid4()), session_id=sid, question_number=new_q_num,
+                question_text=f"Given your previous answers, could you elaborate on a complex technical challenge you faced recently?",
+                question_type="behavioral", topic="Dynamic Deep Dive", target_skill="problem_solving",
+                status="pending", scoring_criteria='{"good": "Detailed problem solving process", "poor": "Vague response"}'
+            )
+            db.add(dynamic_q)
+            db.commit()
+            is_last = False
+        else:
+            is_last = True
+    else:
+        is_last = False
     
     if is_last:
         s.status = "completed"
-        # Background task for report generation would go here
+        # bg_tasks.add_task(generate_final_report_task, sid) # Future
         
     db.commit()
     

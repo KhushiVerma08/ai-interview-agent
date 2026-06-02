@@ -57,6 +57,7 @@ Return EXACTLY this JSON structure (no deviations):
 {{
   "candidateName": "extracted full name or 'Candidate'",
   "candidateEmail": "extracted email or null",
+  "jobRole": "extract the specific job title or role from the JD",
   "detectedLevel": "fresher|intermediate|experienced",
   "levelReason": "one short line explaining the experience level (e.g. 3 years of react experience)",
   "yearsExperience": 0,
@@ -77,7 +78,8 @@ Return EXACTLY this JSON structure (no deviations):
   
   "gapAnalysis": {{
     "missingSkills": ["skills explicitly listed in the JD that are completely missing from the resume"],
-    "weakAreas": ["areas where candidate has some but not enough experience"],
+    "experienceGaps": ["shortfalls in required years of experience or domain expertise"],
+    "educationalGaps": ["missing degrees, certifications, or educational qualifications required by the JD"],
     "matchScore": 85,
     "summary": "2 sentence summary of where candidate meets and misses the JD"
   }},
@@ -190,21 +192,31 @@ Return ONLY a JSON array:
     
     return intro_questions + res
 
-async def evaluate_answer(question: dict, answer: str, level: str, previous_answers: list = []) -> dict:
+async def evaluate_answer(question: dict, answer: str, level: str, previous_answers: list = None, upcoming_questions: list = None) -> dict:
+    if previous_answers is None: previous_answers = []
+    if upcoming_questions is None: upcoming_questions = []
+
     context = ""
     if previous_answers:
         context = "\\nPrevious answers for context:\\n" + "\\n".join([f"Q: {a['questionText']} | A: {a['answerText']}" for a in previous_answers[-3:]])
     
+    upcoming_context = ""
+    if upcoming_questions:
+        upcoming_context = "\\nUPCOMING PLANNED QUESTIONS:\\n" + "\\n".join([f"ID: {q['id']} | Q: {q['questionText']} | SKILL: {q['targetSkill']}" for q in upcoming_questions])
+
     raw = await call(
         FAST_MODEL,
         "You are an expert technical interviewer. Evaluate interview answers precisely and fairly. ALWAYS return ONLY valid JSON.",
-        f"""Evaluate this interview answer.
+        f"""Evaluate this interview answer across 6 core parameters.
 CANDIDATE LEVEL: {level}
 QUESTION: "{question.get('questionText')}"
 SCORING CRITERIA: {json.dumps(question.get('scoringCriteria'))}
 {context}
+{upcoming_context}
 
 CANDIDATE'S ANSWER: "{answer}"
+
+If the candidate's answer naturally covered the topics or skills of any UPCOMING PLANNED QUESTIONS, include their IDs in the "coveredUpcomingQuestionIds" array so we can skip them.
 
 Return ONLY this JSON:
 {{
@@ -212,7 +224,9 @@ Return ONLY this JSON:
   "depthScore": 5.0,
   "clarityScore": 5.0,
   "problemSolvingScore": 5.0,
-  "overallScore": 5.0,
+  "confidenceScore": 5.0,
+  "communicationScore": 5.0,
+  "coveredUpcomingQuestionIds": [],
   "keywordsDetected": [],
   "needsFollowup": false,
   "followupQuestion": "",
@@ -220,36 +234,61 @@ Return ONLY this JSON:
   "internalNote": "",
   "acknowledgment": ""
 }}""",
-        600
+        800
     )
     res = parse_json(raw)
     if not res:
         return {
             "technicalScore": 5, "depthScore": 5, "clarityScore": 5, "problemSolvingScore": 5,
+            "confidenceScore": 5, "communicationScore": 5, "coveredUpcomingQuestionIds": [],
             "overallScore": 5, "keywordsDetected": [], "needsFollowup": False,
             "followupQuestion": "", "followupReason": "", "internalNote": "Evaluation failed",
             "acknowledgment": "Thank you for that answer.",
         }
-    res["overallScore"] = round((res.get("technicalScore", 5)*0.4 + res.get("depthScore", 5)*0.3 + res.get("clarityScore", 5)*0.2 + res.get("problemSolvingScore", 5)*0.1), 1)
+    
+    # Strictly enforce the final_score formula in Python
+    tech = float(res.get("technicalScore", 5))
+    depth = float(res.get("depthScore", 5))
+    clarity = float(res.get("clarityScore", 5))
+    ps = float(res.get("problemSolvingScore", 5))
+    conf = float(res.get("confidenceScore", 5))
+    comm = float(res.get("communicationScore", 5))
+    
+    res["overallScore"] = round((tech*0.30 + depth*0.20 + clarity*0.15 + ps*0.15 + conf*0.10 + comm*0.10), 2)
     return res
 
 async def generate_final_report(session: dict, questions: list, answers: list, scores: list) -> dict:
-    tech_avg = round(sum([s.get("technical_score", 0) for s in scores]) / max(len(scores), 1), 1)
-    depth_avg = round(sum([s.get("depth_score", 0) for s in scores]) / max(len(scores), 1), 1)
-    clar_avg = round(sum([s.get("clarity_score", 0) for s in scores]) / max(len(scores), 1), 1)
-    ps_avg = round(sum([s.get("problem_solving_score", 0) for s in scores]) / max(len(scores), 1), 1)
-    overall = round((tech_avg*0.4 + depth_avg*0.3 + clar_avg*0.2 + ps_avg*0.1), 1)
+    cnt = max(len(scores), 1)
+    tech_avg = round(sum([s.get("technical_score", 0) for s in scores]) / cnt, 2)
+    depth_avg = round(sum([s.get("depth_score", 0) for s in scores]) / cnt, 2)
+    clar_avg = round(sum([s.get("clarity_score", 0) for s in scores]) / cnt, 2)
+    ps_avg = round(sum([s.get("problem_solving_score", 0) for s in scores]) / cnt, 2)
+    conf_avg = round(sum([s.get("confidence_score", 0) for s in scores]) / cnt, 2)
+    comm_avg = round(sum([s.get("communication_score", 0) for s in scores]) / cnt, 2)
+    
+    # Strictly enforce formula for final score
+    overall = round((tech_avg*0.30 + depth_avg*0.20 + clar_avg*0.15 + ps_avg*0.15 + conf_avg*0.10 + comm_avg*0.10), 2)
+    competency = round((conf_avg + comm_avg + ps_avg + depth_avg) / 4, 2)
+    
+    if overall >= 8:
+        recommendation = "Strongly Recommended"
+    elif overall >= 6.5:
+        recommendation = "Recommended"
+    elif overall >= 5:
+        recommendation = "Consider with Reservations"
+    else:
+        recommendation = "Needs Improvement"
     
     raw = await call(
         SMART_MODEL,
         "You are a senior hiring manager writing a precise, unbiased, evidence-based evaluation. ALWAYS return ONLY valid JSON.",
         f"""Generate a comprehensive hiring evaluation report.
 CANDIDATE: {session.get('candidate_name')}
-COMPOSITE SCORES: OVERALL {overall}/10
+COMPOSITE SCORES: OVERALL {overall}/10, COMPETENCY {competency}/10
+CALCULATED RECOMMENDATION: {recommendation}
 
 Return ONLY this JSON:
 {{
-  "verdict": "STRONGLY_RECOMMENDED|RECOMMENDED|NEEDS_FURTHER_REVIEW|NOT_RECOMMENDED",
   "verdictConfidence": 90,
   "executiveSummary": "...",
   "strengths": ["..."],
@@ -272,7 +311,10 @@ Return ONLY this JSON:
         "depthAvg": depth_avg,
         "clarityAvg": clar_avg,
         "problemSolvingAvg": ps_avg,
-        "verdict": res.get("verdict"),
+        "confidenceAvg": conf_avg,
+        "communicationAvg": comm_avg,
+        "competencyScore": competency,
+        "verdict": recommendation,
         "verdictConfidence": res.get("verdictConfidence"),
         "executiveSummary": res.get("executiveSummary"),
         "strengths": res.get("strengths", []),

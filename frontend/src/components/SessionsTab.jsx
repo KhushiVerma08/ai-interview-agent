@@ -9,7 +9,7 @@ export default function SessionsTab() {
 
   useEffect(() => {
     axios.get('http://localhost:8000/api/hr/sessions')
-      .then(res => setSessions(res.data.filter(s => s.status !== 'completed')))
+      .then(res => setSessions(res.data))
       .catch(console.error);
   }, []);
 
@@ -45,7 +45,7 @@ export default function SessionsTab() {
         </thead>
         <tbody>
           {sessions.map(s => {
-            const timeStr = s.created_at ? new Date(s.created_at).toLocaleString() : 'N/A';
+            const timeStr = s.created_at ? new Date(s.created_at + (s.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }) : 'N/A';
             return (
               <tr key={s.id}>
                 <td>

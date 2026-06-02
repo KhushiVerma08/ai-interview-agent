@@ -95,7 +95,7 @@ tr.clickable:hover td{background:rgba(91,124,250,.04);cursor:pointer}
 .score-val{font-family:var(--mono);font-size:11px;color:var(--text2)}
 
 /* ── UPLOAD FORM ── */
-.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:900px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
 .form-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:22px}
 .form-card.full{grid-column:1/-1}
 .form-label{font-size:11px;font-weight:500;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
@@ -130,7 +130,7 @@ select{cursor:pointer}
 .check-row input{accent-color:var(--accent);width:14px;height:14px}
 
 /* ── ANALYSIS RESULT ── */
-.analysis-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:22px;margin-top:20px;max-width:900px;display:none}
+.analysis-panel{background:var(--card);border:1px solid var(--border);border-radius:var(--r2);padding:22px;margin-top:20px;display:none}
 .analysis-panel.show{display:block;animation:fadeUp .3s ease}
 .level-banner{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;padding:16px 18px;border-radius:var(--r);margin-bottom:18px}
 .level-banner.fresher{background:rgba(91,124,250,.08);border:1px solid rgba(91,124,250,.2)}
