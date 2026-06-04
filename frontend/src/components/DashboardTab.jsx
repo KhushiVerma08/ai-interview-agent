@@ -11,7 +11,7 @@ export default function DashboardTab() {
   const [sessions, setSessions] = useState([]);
   const [activeFilter, setActiveFilter] = useState(null);
   const [confirmedEmail, setConfirmedEmail] = useState("");
-  const [stats, setStats] = useState({ total: 0, inProgress: 0, completed: 0, scheduled: 0, failed: 0, cancelled: 0 });
+  const [stats, setStats] = useState({ total: 0, inProgress: 0, completed: 0, scheduled: 0, incomplete: 0 });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -25,8 +25,7 @@ export default function DashboardTab() {
           inProgress: fetchedSessions.filter(s => s.status?.toLowerCase() === 'in_progress').length,
           completed: fetchedSessions.filter(s => s.status?.toLowerCase() === 'completed').length,
           scheduled: fetchedSessions.filter(s => s.status?.toLowerCase() === 'scheduled').length,
-          failed: fetchedSessions.filter(s => s.status?.toLowerCase() === 'failed').length,
-          cancelled: fetchedSessions.filter(s => s.status?.toLowerCase() === 'cancelled').length,
+          incomplete: fetchedSessions.filter(s => ['incomplete', 'failed', 'cancelled'].includes(s.status?.toLowerCase())).length,
         });
       })
       .catch(console.error);
@@ -93,7 +92,7 @@ export default function DashboardTab() {
       sessionStorage.setItem('hr_analysis', JSON.stringify(res.data.analysis));
       sessionStorage.setItem('hr_tempFiles', JSON.stringify(res.data.tempFiles));
     } catch (err) {
-      alert("Analysis failed: " + err.response?.data?.detail || err.message);
+      alert("Analysis failed: " + (err.response?.data?.detail || err.message));
     }
     setLoading(false);
   };
@@ -102,19 +101,23 @@ export default function DashboardTab() {
     if (!analysis) return;
     setLoading(true);
     try {
-      await axios.post('http://localhost:8000/api/schedule', {
+      const res = await axios.post('http://localhost:8000/api/schedule', {
         analysis,
         role: analysis.jobRole || 'Software Engineer',
         questionCount: 12,
         tempFiles,
         confirmedEmail
-      });
+      }, { timeout: 180000 }); // 3 minute timeout for rate limit sleeps
+      
+      const scheduledTime = new Date(res.data.scheduled_at + "Z").toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
+      alert(`Meeting is scheduled at ${scheduledTime} and an email has been sent to ${confirmedEmail}`);
+
       // Clear session storage once scheduled
       sessionStorage.removeItem('hr_analysis');
       sessionStorage.removeItem('hr_tempFiles');
       navigate('/sessions');
     } catch (err) {
-      alert("Scheduling failed");
+      alert("Scheduling failed: " + (err.response?.data?.detail || err.message));
     }
     setLoading(false);
   };
@@ -147,13 +150,9 @@ export default function DashboardTab() {
           <div className="stat-num" style={{ fontSize: '28px', fontWeight: 800, color: '#a855f7' }}>{stats.inProgress}</div>
           <div className="stat-label" style={{ fontSize: '12px', color: '#a855f7', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>In Progress</div>
         </div>
-        <div className={`stat-card ${activeFilter === 'failed' ? 'active-filter' : ''}`} onClick={() => setActiveFilter(activeFilter === 'failed' ? null : 'failed')} style={{ background: 'rgba(239, 68, 68, 0.05)', padding: '20px', borderRadius: '12px', border: activeFilter === 'failed' ? '2px solid var(--accent)' : '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <div className="stat-num" style={{ fontSize: '28px', fontWeight: 800, color: '#ef4444' }}>{stats.failed}</div>
-          <div className="stat-label" style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Failed</div>
-        </div>
-        <div className={`stat-card ${activeFilter === 'cancelled' ? 'active-filter' : ''}`} onClick={() => setActiveFilter(activeFilter === 'cancelled' ? null : 'cancelled')} style={{ background: 'rgba(255, 171, 0, 0.05)', padding: '20px', borderRadius: '12px', border: activeFilter === 'cancelled' ? '2px solid var(--accent)' : '1px solid rgba(255, 171, 0, 0.2)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <div className="stat-num" style={{ fontSize: '28px', fontWeight: 800, color: '#ffab00' }}>{stats.cancelled}</div>
-          <div className="stat-label" style={{ fontSize: '12px', color: '#ffab00', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cancelled</div>
+        <div className={`stat-card ${activeFilter === 'incomplete' ? 'active-filter' : ''}`} onClick={() => setActiveFilter(activeFilter === 'incomplete' ? null : 'incomplete')} style={{ background: 'rgba(239, 68, 68, 0.05)', padding: '20px', borderRadius: '12px', border: activeFilter === 'incomplete' ? '2px solid var(--accent)' : '1px solid rgba(239, 68, 68, 0.2)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <div className="stat-num" style={{ fontSize: '28px', fontWeight: 800, color: '#ef4444' }}>{stats.incomplete}</div>
+          <div className="stat-label" style={{ fontSize: '12px', color: '#ef4444', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Incomplete</div>
         </div>
       </div>
 
@@ -313,8 +312,13 @@ export default function DashboardTab() {
             <button className="btn" onClick={handleReset} disabled={loading} style={{ padding: '12px 24px', fontSize: '16px', background: 'var(--bg3)', color: 'var(--text-main)', border: '1px solid var(--border)', cursor: 'pointer' }}>
               ↺ Reset
             </button>
-            <button className="btn btn-success" onClick={handleSchedule} disabled={loading} style={{ padding: '12px 24px', fontSize: '16px', cursor: 'pointer' }}>
-              📅 Start Interview
+            <button 
+              className="btn-primary" 
+              onClick={handleSchedule} 
+              disabled={loading || !confirmedEmail} 
+              style={{ flex: 1, padding: '12px', fontSize: '15px' }}
+            >
+              {loading ? 'Scheduling...' : 'Schedule Interview'}
             </button>
           </div>
         </div>

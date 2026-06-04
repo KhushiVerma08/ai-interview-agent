@@ -1,17 +1,23 @@
 import os
 from sqlalchemy import create_engine, Column, String, Integer, Float, Text
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.engine import URL
 
-DB_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-if not os.path.exists(DB_DIR):
-    os.makedirs(DB_DIR, exist_ok=True)
+# ── DATABASE CONFIG ──
+SUPABASE_URL = URL.create(
+    drivername="postgresql",
+    username="postgres",
+    password="bellurbis@ai-interview-agent",
+    host="db.ppenztmwjgwtuafwesvg.supabase.co",
+    port=5432,
+    database="postgres"
+)
 
-DB_PATH = os.path.join(DB_DIR, "interview_agent.db")
-SQLALCHEMY_DATABASE_URL = f"sqlite:///{DB_PATH}"
-
-# Add check_same_thread=False since FastAPI handles concurrency
+# Use psycopg2 engine
 engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    SUPABASE_URL,
+    pool_size=10,
+    max_overflow=20
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -52,6 +58,7 @@ class Session(Base):
     interview_link = Column(String)
     current_question_index = Column(Integer, default=1)
     scheduled_at = Column(String)
+    failure_reason = Column(String)
     started_at = Column(String)
     ended_at = Column(String)
     duration_seconds = Column(Integer)

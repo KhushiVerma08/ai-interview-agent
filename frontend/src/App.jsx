@@ -1,9 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import axios from 'axios';
 import DashboardTab from './components/DashboardTab';
 import SessionsTab from './components/SessionsTab';
 import ReportsTab from './components/ReportsTab';
 import Candidate from './components/Candidate';
+import Login from './components/Login';
+import { supabase } from './supabaseClient';
 import './index.css';
 
 function Sidebar() {
@@ -73,9 +76,12 @@ function App() {
   return (
     <Router>
       <Routes>
+        {/* Candidate route */}
         <Route path="/candidate" element={<Candidate />} />
+        
+        {/* HR Dashboard (Unprotected) */}
         <Route path="/*" element={
-          <div style={{ display: 'flex', width: '100%', height: '100vh' }}>
+          <div style={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden' }}>
             <Sidebar />
             <MainLayout />
           </div>

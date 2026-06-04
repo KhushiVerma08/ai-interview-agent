@@ -10,7 +10,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 def ist_now():
     return datetime.now(IST)
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks, Body
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, BackgroundTasks, Body, Header
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -19,8 +19,22 @@ from services.pdf import extract_text
 from services.claude import analyze_documents, generate_question_plan, evaluate_answer, generate_final_report, generate_opening, generate_consent_bridge, generate_edge_case_response, generate_dynamic_followup
 from services.email import send_meeting_invite
 from services.teams import create_teams_meeting
+from supabase import create_client, Client
 
 app = FastAPI(title="AI Interview Agent API")
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://ppenztmwjgwtuafwesvg.supabase.co")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBwZW56dG13amd3dHVhZndlc3ZnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNzkwNDAsImV4cCI6MjA5NTk1NTA0MH0.Oo38lPYlSDokBWOJSM3DTgNjP0kvs7HIhU2lypC0Sak")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+async def verify_token(authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid token")
+    token = authorization.split(" ")[1]
+    user = supabase.auth.get_user(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    return user
 
 app.add_middleware(
     CORSMiddleware,
@@ -160,22 +174,26 @@ async def schedule_interview(payload: Dict[Any, Any], background_tasks: Backgrou
         to_email=db_session.candidate_email,
         candidate_name=db_session.candidate_name,
         meeting_link=db_session.interview_link,
+        scheduled_at=db_session.scheduled_at,
         teams_link=db_session.teams_meeting_url,
-        scheduled_at=db_session.scheduled_at
+        role=db_session.role,
+        company_name=os.getenv("COMPANY_NAME", "Our Company")
     )
 
-    return {"success": True, "sessionId": session_id, "interviewLink": db_session.interview_link}
+    return {"success": True, "sessionId": session_id, "interviewLink": db_session.interview_link, "scheduled_at": db_session.scheduled_at}
 
 @app.get("/api/hr/sessions")
 def get_sessions(db: Session = Depends(get_db)):
-    sessions = db.query(DbSession).order_by(DbSession.created_at.desc()).all()
+    sessions_with_reports = db.query(DbSession, DbReport.verdict)\
+        .outerjoin(DbReport, DbSession.id == DbReport.session_id)\
+        .order_by(DbSession.created_at.desc()).all()
     results = []
     
     # Auto-cancel logic for stale scheduled sessions
     now = ist_now().replace(tzinfo=None)
     commit_needed = False
     
-    for s in sessions:
+    for s, verdict in sessions_with_reports:
         display_status = s.status.lower() if s.status else "scheduled"
         if display_status == "active":
             display_status = "in_progress"
@@ -183,15 +201,15 @@ def get_sessions(db: Session = Depends(get_db)):
             display_status = "scheduled"
 
         if display_status == "scheduled":
-            # Fallback to created_at if scheduled_at doesn't exist
             timestamp_to_check = s.scheduled_at or s.created_at
             if timestamp_to_check:
                 try:
                     time_str = timestamp_to_check.replace("Z", "+00:00")
                     scheduled_time = datetime.fromisoformat(time_str).replace(tzinfo=None)
-                    if now - scheduled_time > timedelta(hours=24):
-                        s.status = "cancelled"
-                        display_status = "cancelled"
+                    if now - scheduled_time > timedelta(minutes=10):
+                        s.status = "incomplete"
+                        s.failure_reason = "Candidate didn't join or respond for 10 minutes when meeting starts"
+                        display_status = "incomplete"
                         commit_needed = True
                 except ValueError:
                     pass
@@ -201,9 +219,12 @@ def get_sessions(db: Session = Depends(get_db)):
                 try:
                     time_str = timestamp_to_check.replace("Z", "+00:00")
                     started_time = datetime.fromisoformat(time_str).replace(tzinfo=None)
+                    
+                    # 2 hour fallback for complete system failure
                     if now - started_time > timedelta(hours=2):
-                        s.status = "failed"
-                        display_status = "failed"
+                        s.status = "incomplete"
+                        s.failure_reason = "System error occurs"
+                        display_status = "incomplete"
                         commit_needed = True
                 except ValueError:
                     pass
@@ -211,7 +232,9 @@ def get_sessions(db: Session = Depends(get_db)):
         results.append({
             "id": s.id, "candidate_name": s.candidate_name, "role": s.role, 
             "status": display_status, "detected_level": s.detected_level,
-            "created_at": s.created_at, "interview_link": s.interview_link
+            "created_at": s.created_at, "scheduled_at": s.scheduled_at, "interview_link": s.interview_link,
+            "selection_status": verdict if verdict else "N/A",
+            "failure_reason": s.failure_reason
         })
         
     if commit_needed:
@@ -240,6 +263,10 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
 def get_interview_session(session_id: str, db: Session = Depends(get_db)):
     s = db.query(DbSession).filter(DbSession.id == session_id).first()
     if not s: raise HTTPException(status_code=404, detail="Not found")
+    
+    if s.status == "incomplete":
+        raise HTTPException(status_code=403, detail="This interview session is incomplete.")
+        
     qs = db.query(DbQuestion).filter(DbQuestion.session_id == session_id).all()
     return {
         "success": True,
@@ -254,6 +281,8 @@ def get_interview_session(session_id: str, db: Session = Depends(get_db)):
 async def start_interview(payload: Dict[Any, Any], db: Session = Depends(get_db)):
     s = db.query(DbSession).filter(DbSession.id == payload.get("sessionId")).first()
     if not s: raise HTTPException(status_code=404)
+    if s.status == "incomplete":
+        raise HTTPException(status_code=403, detail="This interview session is incomplete.")
     
     # Fetch the lowest pending question
     q = db.query(DbQuestion).filter(
@@ -470,3 +499,30 @@ async def recall_webhook(payload: Dict[Any, Any], bg_tasks: BackgroundTasks, db:
                 "audio_text": "Thank you for your time. That concludes our interview.",
                 "orchestration_note": "Interview concluded"
             }
+
+@app.on_event("startup")
+async def startup_event():
+    from database import SessionLocal
+    asyncio.create_task(run_auto_purge())
+
+async def run_auto_purge():
+    from database import SessionLocal
+    while True:
+        try:
+            with SessionLocal() as db:
+                cutoff = ist_now() - timedelta(days=90)
+                cutoff_str = cutoff.isoformat()
+                old_sessions = db.query(DbSession).filter(DbSession.created_at < cutoff_str).all()
+                for s in old_sessions:
+                    print(f"Purging old session {s.id}")
+                    session_folder = os.path.join(SESSION_DIR, s.id)
+                    if os.path.exists(session_folder):
+                        import shutil
+                        shutil.rmtree(session_folder)
+                    db.delete(s)
+                if old_sessions:
+                    db.commit()
+        except Exception as e:
+            print(f"Auto-purge error: {e}")
+        await asyncio.sleep(86400)
+

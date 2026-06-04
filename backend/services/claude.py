@@ -1,40 +1,93 @@
 import os
 import json
 import logging
+import asyncio
 import google.generativeai as genai
+from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"))
 
 logger = logging.getLogger(__name__)
 
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
+api_keys = [k.strip() for k in os.getenv("GEMINI_API_KEY", "").split(",") if k.strip()]
+current_key_idx = 0
+
+if not api_keys:
     logger.warning("No GEMINI_API_KEY found.")
 else:
-    genai.configure(api_key=api_key)
+    genai.configure(api_key=api_keys[0])
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
+anthropic_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+
+# Map our internal model names to Claude models if using Anthropic
+ANTHROPIC_MODELS = {
+    "gemini-2.5-flash": "claude-3-5-sonnet-20240620",
+    "gemini-2.5-pro": "claude-3-5-sonnet-20240620"
+}
 
 SMART_MODEL = "gemini-2.5-flash"
 FAST_MODEL = "gemini-2.5-flash"
 
+import re
+
 def parse_json(text: str) -> dict:
     try:
         text = text.replace("```json", "").replace("```", "").strip()
+        match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
+        if match:
+            text = match.group(1)
         return json.loads(text)
     except Exception as e:
         logger.warning(f"JSON parse failed: {str(e)[:200]}")
         return None
 
 async def call(model_name: str, system: str, user_content: str, max_tokens: int = 1500) -> str:
-    if not api_key:
-        raise Exception("No Gemini API key configured.")
-    try:
-        model = genai.GenerativeModel(model_name, system_instruction=system)
-        response = await model.generate_content_async(user_content)
-        return response.text
-    except Exception as e:
-        logger.error(f"Gemini API error: {e}")
-        raise e
+    global current_key_idx
+    
+    # Try Anthropic first if available
+    if anthropic_client:
+        try:
+            anthropic_model = ANTHROPIC_MODELS.get(model_name, "claude-3-5-sonnet-20240620")
+            response = await anthropic_client.messages.create(
+                model=anthropic_model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user_content}]
+            )
+            return response.content[0].text
+        except Exception as e:
+            logger.warning(f"Anthropic API failed ({str(e)}). Falling back to Gemini...")
+            # Fall through to Gemini execution block
+            
+    if not api_keys:
+        raise Exception("No API keys (Anthropic or Gemini) configured.")
+    
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            model = genai.GenerativeModel(model_name, system_instruction=system)
+            response = await model.generate_content_async(user_content)
+            return response.text
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "429" in err_msg or "quota" in err_msg or "resourceexhausted" in err_msg:
+                if len(api_keys) > 1:
+                    current_key_idx = (current_key_idx + 1) % len(api_keys)
+                    genai.configure(api_key=api_keys[current_key_idx])
+                    logger.warning(f"Rate limited by Gemini. Switching to API key index {current_key_idx} (Retry {attempt + 1}/{max_retries})...")
+                    continue
+                elif attempt < max_retries - 1:
+                    wait_time = 45 * (attempt + 1)
+                    logger.warning(f"Rate limited by Gemini. Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                    await asyncio.sleep(wait_time)
+                    continue
+            
+            logger.error(f"Gemini API error: {e}")
+            raise e
+
+    raise Exception("All API keys and retries exhausted due to rate limits. Please check your Gemini API quotas.")
 
 async def analyze_documents(jd_text: str, resume_text: str, role: str) -> dict:
     raw = await call(
@@ -50,7 +103,7 @@ CANDIDATE RESUME:
 
 Rules:
 - Detect experience level from: years of experience mentioned, job titles held, complexity of projects, seniority of responsibilities
-- fresher = 0-2 years, intermediate = 2-5 years, experienced = 5+ years
+- fresher = less than 1 year of experience, experienced = 1+ years of experience
 - Scan for candidate email address if present in resume text
 
 Return EXACTLY this JSON structure (no deviations):
@@ -58,7 +111,7 @@ Return EXACTLY this JSON structure (no deviations):
   "candidateName": "extracted full name or 'Candidate'",
   "candidateEmail": "extracted email or null",
   "jobRole": "extract the specific job title or role from the JD",
-  "detectedLevel": "fresher|intermediate|experienced",
+  "detectedLevel": "fresher|experienced",
   "levelReason": "one short line explaining the experience level (e.g. 3 years of react experience)",
   "yearsExperience": 0,
   
@@ -125,14 +178,30 @@ MISSING SKILLS (JD GAP): {", ".join(analysis.get("gapAnalysis", {}).get("missing
 WEAK AREAS (JD GAP): {", ".join(analysis.get("gapAnalysis", {}).get("weakAreas", []))}
 AGENT BRIEFING: {analysis.get("summaryForAgent", "")}
 
-QUESTION FLOW (must follow this order):
-1. Core Technical
-2. Practical / Scenario-based
-3. Gap Area Probing
-4. Behavioral / Soft Skills
-5. Closing / Motivation
+QUESTION FLOW (must strictly follow this exact order):
 
-Generate exactly {max(1, question_count - 2)} questions.
+If Candidate is {level_config['fresher']['label']}:
+1. Core Technical Skills (Evaluate fundamental skills and core technologies)
+2. Basic Problem-Solving (Professional/educational problem solving scenarios)
+3. Educational Projects (Discuss educational competencies and projects)
+4. Theoretical Knowledge (Test theoretical basics)
+5. Motivation (Why this company and role?)
+6. Career Goals (Future aspirations and growth)
+
+If Candidate is {level_config['experienced']['label']}:
+1. Handling Complex Challenges (Real-world technical challenges)
+2. Team Leadership Scenarios (Mentorship, conflict resolution, leadership)
+3. High-Level Strategy (Drive results, system architecture, strategy)
+4. Motivation (Why this company and role?)
+5. Career Goals (Future aspirations and growth)
+
+Generate exactly {max(1, question_count - 2)} questions spanning the modules above.
+
+CRITICAL RULE on Difficulty Progression:
+Ensure the generated technical questions progressively increase in difficulty and depth. 
+- Early questions (e.g., Module 1) MUST be "surface" depth.
+- Middle questions (e.g., Module 2) MUST be "medium" depth.
+- Late technical questions (e.g., Module 3/4) MUST be "deep" depth.
 Return ONLY a JSON array:
 [
   {{
@@ -156,36 +225,36 @@ Return ONLY a JSON array:
     res = parse_json(raw)
     if not res: raise Exception("Failed to parse questions")
     
-    # Prepend standard introductory questions
+    # Prepend standard unified starting stage
     intro_questions = [
         {
             "id": "intro_1",
-            "questionText": f"Hello {analysis.get('candidateName', 'there')}, I am the AI Interview Agent. I will be conducting your technical interview today. Before we dive into the technical questions, do I have your consent to proceed and record this session?",
-            "type": "consent",
-            "topic": "Consent & Introduction",
+            "questionText": f"Hello {analysis.get('candidateName', 'there')}, I am the AI Interview Agent. Before we dive in, do I have your consent to proceed and record this session? If so, please share your background and your interest in this experience.",
+            "type": "consent_intro",
+            "topic": "Introduction",
             "depth": "surface",
             "flow": "opening",
             "targetSkill": "communication",
-            "followupTriggers": [],
+            "followupTriggers": ["background"],
             "scoringCriteria": {
-                "excellent": "Clear affirmative consent provided.",
-                "good": "Consent provided.",
-                "poor": "Refusal or ambiguous consent."
+                "excellent": "Provides consent and gives a clear, concise background summary.",
+                "good": "Provides consent and a reasonable background.",
+                "poor": "Refuses consent or gives an unclear background."
             }
         },
         {
             "id": "intro_2",
-            "questionText": "Great, thank you. To start us off, could you please tell me a little bit about yourself and walk me through your recent experience?",
+            "questionText": "Thank you. Could you discuss your proudest achievement or a significant momentary success from your recent experience?",
             "type": "behavioral",
-            "topic": "Background & Introduction",
+            "topic": "Proudest Achievement",
             "depth": "surface",
             "flow": "opening",
             "targetSkill": "communication",
-            "followupTriggers": ["projects", "responsibilities"],
+            "followupTriggers": ["achievement", "success"],
             "scoringCriteria": {
-                "excellent": "Clear, concise, and structured summary of relevant experience.",
-                "good": "Provides a reasonable summary of background.",
-                "poor": "Rambling, unclear, or lacks relevance."
+                "excellent": "Clearly articulates a significant achievement with metrics or clear impact.",
+                "good": "Describes a relevant achievement.",
+                "poor": "Vague or lacks a specific achievement."
             }
         }
     ]
@@ -272,12 +341,12 @@ async def generate_final_report(session: dict, questions: list, answers: list, s
     
     if overall >= 8:
         recommendation = "Strongly Recommended"
-    elif overall >= 6.5:
+    elif overall >= 6:
         recommendation = "Recommended"
-    elif overall >= 5:
-        recommendation = "Consider with Reservations"
-    else:
+    elif overall >= 4:
         recommendation = "Needs Improvement"
+    else:
+        recommendation = "Not Recommended"
     
     raw = await call(
         SMART_MODEL,
