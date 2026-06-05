@@ -1,69 +1,83 @@
 # AI Interview Agent
 
-AI-Powered Adaptive First-Round Interview Agent.
+An AI-Powered Adaptive First-Round Interview Agent built with modern web technologies, enabling fully automated, conversational interviews within Microsoft Teams using Recall.ai.
 
 ## Overview
 
-This project is an AI-powered agent designed to conduct first-round interviews. It runs a web application that facilitates the entire interview process, from candidate application to interactive assessment and report generation.
+This project is a sophisticated AI agent designed to conduct dynamic first-round technical and behavioral interviews. HR creates sessions from a dashboard, candidates receive invites to Microsoft Teams, and an automated Recall.ai bot joins the meeting to conduct and score the interview in real-time.
 
-## Features
-- **Interactive AI Interviewer**: Conducts dynamic, conversational interviews.
-- **Resume Parsing & Document Upload**: Candidates can upload resumes and supporting documents.
-- **Adaptive Questioning**: Generates personalized questions based on the candidate's resume and ongoing responses.
-- **Automated Evaluation**: Evaluates candidates in real-time and calculates a final score.
-- **Report Generation**: Automatically generates comprehensive PDF reports for HR.
-- **HR Dashboard**: A centralized interface for HR to manage candidates and view interview results.
+## Tech Stack
+- **Frontend**: React, Vite, Tailwind CSS
+- **Backend**: Python, FastAPI, SQLAlchemy
+- **Database**: PostgreSQL (Supabase)
+- **AI Models**: Google Gemini / Anthropic Claude
+- **Meeting Bot**: Recall.ai
+
+## Key Features
+- **HR Dashboard**: A centralized portal to create sessions, upload JDs/Resumes, and review scores.
+- **Automated Bot Spawning**: The backend continuously polls and automatically spawns a Recall.ai bot into the Teams meeting 5 minutes before the scheduled start time.
+- **Dynamic Interview Generation**: LLMs analyze the Job Description and Candidate Resume to generate a tailored 5-question interview plan, including technical threshold tracking and follow-up generation.
+- **Real-Time Evaluation**: As the candidate speaks to the Recall bot, the backend webhook processes transcripts statelessly, scores answers, and triggers dynamic follow-ups if the candidate struggles.
+- **Automated Data Retention**: A background cron task automatically purges sessions and PII older than 90 days.
 
 ## Folder Structure
 
 ```text
 ai-interview-agent/
-├── data/               # SQLite database and related data files
-├── logs/               # Application log files
-├── public/             # Static assets (HTML, CSS, JS) for the frontend web interface
-│   ├── css/            # Stylesheets
-│   ├── js/             # Client-side JavaScript
-│   ├── candidate.html  # Candidate application form
-│   ├── index.html      # HR dashboard / Landing page
-│   └── interview.html  # Main interactive AI interview interface
-├── reports/            # Generated interview PDF reports
-├── scratch/            # Temporary processing files
-├── src/                # Backend source code
-│   ├── config/         # Configuration files (Database, Logger, etc.)
-│   ├── jobs/           # Background jobs (e.g., data retention and cleanup)
-│   ├── routes/         # Express API routes (HR and Interview endpoints)
-│   └── services/       # Core business logic (Claude API integration, Email, PDF generation)
-├── tests/              # Automated test suites
-├── uploads/            # Uploaded candidate documents (resumes, etc.)
-├── .env                # Environment variables (create from env.example)
-├── env.example         # Example environment variables template
-├── package.json        # Project metadata and Node.js dependencies
-└── server.js           # Main Express server entry point
+├── backend/            # Python FastAPI Backend
+│   ├── services/       # Integrations (Recall.ai, LLM Logic, Teams)
+│   ├── database.py     # SQLAlchemy models & DB connection
+│   ├── main.py         # FastAPI application, background tasks, webhooks
+│   └── requirements.txt
+├── frontend/           # React + Vite Frontend
+│   ├── src/
+│   │   ├── components/ # React components (Dashboard, Candidate view)
+│   │   ├── utils/      # API helpers
+│   │   └── App.jsx     # Main Router
+│   ├── index.css       # Tailwind entry
+│   └── package.json
+├── uploads/            # Temporary file storage (purged automatically)
+├── .env                # Environment secrets
+└── README.md
 ```
 
-## How It Works
+## Setup & Local Development
 
-1. **Candidate Application**: Candidates navigate to the candidate portal (`candidate.html`) and submit their details along with their resume.
-2. **Resume Analysis**: The backend processes the uploaded resume using an AI service (Claude) to extract key skills and experience.
-3. **Adaptive Interview**: The candidate enters the interview interface (`interview.html`). The AI agent dynamically asks questions tailored to the candidate's background and evaluates their responses in real-time.
-4. **Scoring & Feedback**: The system scores the candidate based on predefined criteria, technical accuracy, and communication skills.
-5. **Report Generation**: Once the interview concludes, the system generates a detailed PDF report containing the interview transcript, scores, and AI-driven feedback.
-6. **HR Review**: HR personnel can review the candidate's performance and download the generated reports via the HR dashboard (`index.html`).
+### 1. Prerequisites
+- Python 3.9+
+- Node.js 18+
+- A Supabase PostgreSQL instance
+- API Keys for Google Gemini (or Anthropic) and Recall.ai
 
-## Getting Started
+### 2. Environment Configuration
+Copy `env.example` to `.env` in the root folder and add your secrets:
+```env
+# AI Models
+GEMINI_API_KEY="your_gemini_key"
 
-1. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+# Database
+SUPABASE_URL="https://your-project.supabase.co"
+SUPABASE_KEY="your_supabase_key"
 
-2. **Environment Setup**:
-   Create a `.env` file based on `env.example` and fill in the required configurations (e.g., Anthropic API keys, database URLs, etc.).
+# Integrations
+RECALL_API_KEY="your_recall_api_key"
+APP_BASE_URL="http://localhost:8000" # Or your Ngrok/Production URL for webhooks
+```
 
-3. **Start the server**:
-   ```bash
-   npm start
-   ```
-   *For development with auto-reload, use `npm run dev`.*
+### 3. Backend Setup
+```bash
+cd backend
+python -m venv .venv
+# Activate the venv (Windows: .venv\Scripts\activate, Mac: source .venv/bin/activate)
+pip install -r requirements.txt
+python -m uvicorn main:app --reload
+```
+*The backend runs on `http://localhost:8000`.*
 
-The application will be running at `http://localhost:3000`.
+### 4. Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
+*The frontend runs on `http://localhost:3000`.*
