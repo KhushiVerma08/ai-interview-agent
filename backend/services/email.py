@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def send_meeting_invite(to_email: str, candidate_name: str, meeting_link: str, scheduled_at: str, teams_link: str = None, role: str = "the position", company_name: str = "Our Company"):
+def send_meeting_invite(to_email: str, candidate_name: str, meeting_link: str, scheduled_at: str, teams_link: str = None, role: str = "the position", company_name: str = "Our Company", meeting_platform: str = "Online"):
     if not to_email:
         print("No email provided to send invite to.")
         return
@@ -32,7 +32,7 @@ def send_meeting_invite(to_email: str, candidate_name: str, meeting_link: str, s
     # Convert relative local paths to absolute for the email
     absolute_link = f"http://localhost:3000{meeting_link}" if meeting_link.startswith("/") else meeting_link
 
-    teams_text = f"Join Microsoft Teams Meeting: {teams_link}\n\n(Fallback Web Portal: {absolute_link})" if teams_link else f"Link: {absolute_link}"
+    platform_text = f"Join {meeting_platform} Meeting: {teams_link}\n\n(Fallback Web Portal: {absolute_link})" if teams_link else f"Link: {absolute_link}"
 
     content = f"""Dear {candidate_name},
 
@@ -42,7 +42,7 @@ Your interview has been scheduled for exactly 30 minutes from now.
 
 Date & Time: {friendly_time}
 
-{teams_text}
+{platform_text}
 
 Instructions:
 - Please ensure you are in a quiet room with a stable internet connection.

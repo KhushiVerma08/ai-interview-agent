@@ -39,6 +39,9 @@ function Sidebar() {
       </div>
       <div className="sb-footer">
         <div><span className="status-dot"></span> System Online</div>
+        <div style={{ marginTop: '15px', cursor: 'pointer', color: 'var(--accent2)', fontSize: '13px' }} onClick={() => supabase.auth.signOut()}>
+          Sign Out
+        </div>
       </div>
     </nav>
   );
@@ -55,12 +58,18 @@ function MainLayout() {
 
   return (
     <div className="main">
-      <div className="topbar">
+      <header className="hdr" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <div className="topbar-title">{title}</div>
-          <div className="topbar-sub">{sub}</div>
+          <h2>{title}</h2>
+          <div style={{color: 'var(--text-sec)', fontSize: '14px', marginTop: '5px'}}>{sub}</div>
         </div>
-      </div>
+        <button 
+          onClick={() => supabase.auth.signOut()} 
+          style={{ padding: '8px 16px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--text-sec)', cursor: 'pointer' }}
+        >
+          Sign Out
+        </button>
+      </header>
       <div className="content">
         <Routes>
           <Route path="/" element={<DashboardTab />} />
@@ -73,18 +82,45 @@ function MainLayout() {
 }
 
 function App() {
+  const [session, setSession] = useState(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Synchronously ensure axios has the token BEFORE children mount
+  if (session) {
+    axios.defaults.headers.common['Authorization'] = `Bearer ${session.access_token}`;
+  } else {
+    delete axios.defaults.headers.common['Authorization'];
+  }
+
   return (
     <Router>
       <Routes>
-        {/* Candidate route */}
+        {/* Candidate route (Public) */}
         <Route path="/candidate" element={<Candidate />} />
         
-        {/* HR Dashboard (Unprotected) */}
+        {/* HR Dashboard (Protected) */}
         <Route path="/*" element={
-          <div style={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-            <Sidebar />
-            <MainLayout />
-          </div>
+          !session ? (
+            <Login onLogin={setSession} />
+          ) : (
+            <div style={{ display: 'flex', width: '100vw', height: '100vh', overflow: 'hidden' }}>
+              <Sidebar />
+              <MainLayout />
+            </div>
+          )
         } />
       </Routes>
     </Router>

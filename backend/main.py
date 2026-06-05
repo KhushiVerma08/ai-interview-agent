@@ -57,6 +57,7 @@ async def analyse(
     jd: Optional[UploadFile] = File(None),
     role: str = Form("Software Engineer"),
     questionCount: int = Form(12),
+    user: Any = Depends(verify_token)
 ):
     resume_text = ""
     jd_text = ""
@@ -92,15 +93,19 @@ async def analyse(
     }
 
 @app.post("/api/schedule")
-async def schedule_interview(payload: Dict[Any, Any], background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+async def schedule_interview(payload: Dict[Any, Any], background_tasks: BackgroundTasks, db: Session = Depends(get_db), user: Any = Depends(verify_token)):
     analysis = payload.get("analysis", {})
     role = payload.get("role", "Software Engineer")
     question_count = payload.get("questionCount", 12)
     temp_files = payload.get("tempFiles")
     confirmed_email = payload.get("confirmedEmail")
+    manual_meeting_link = payload.get("manualMeetingLink")
+    meeting_platform = payload.get("meetingPlatform", "Online")
 
     if not confirmed_email and not analysis.get("candidateEmail"):
         raise HTTPException(status_code=400, detail="Candidate email is missing")
+    if not manual_meeting_link:
+        raise HTTPException(status_code=400, detail="Meeting link is missing")
 
     session_id = str(uuid.uuid4())
     questions = await generate_question_plan(analysis, role, question_count)
@@ -124,9 +129,8 @@ async def schedule_interview(payload: Dict[Any, Any], background_tasks: Backgrou
             resume_url = f"/uploads/sessions/{session_id}/{temp_files['resume']}"
 
     scheduled_at = (ist_now() + timedelta(minutes=30)).isoformat()
-    # Generate Microsoft Teams Meeting
-    subject = f"AI Interview: {analysis.get('candidateName', 'Candidate')} - {role}"
-    teams_meeting = create_teams_meeting(subject, scheduled_at)
+    # Use manually provided meeting link
+    teams_meeting_url = manual_meeting_link
 
     db_session = DbSession(
         id=session_id,
@@ -143,8 +147,8 @@ async def schedule_interview(payload: Dict[Any, Any], background_tasks: Backgrou
         missing_skills=json.dumps(analysis.get("gapAnalysis", {}).get("missingSkills", [])),
         jd_match_score=analysis.get("gapAnalysis", {}).get("matchScore"),
         interview_link=f"/candidate?session={session_id}",
-        teams_meeting_url=teams_meeting.get("joinUrl"),
-        teams_meeting_id=teams_meeting.get("meetingId"),
+        teams_meeting_url=teams_meeting_url,
+        teams_meeting_id=None,
         scheduled_at=scheduled_at,
         created_at=ist_now().isoformat(),
         current_question_index=1
@@ -177,13 +181,14 @@ async def schedule_interview(payload: Dict[Any, Any], background_tasks: Backgrou
         scheduled_at=db_session.scheduled_at,
         teams_link=db_session.teams_meeting_url,
         role=db_session.role,
-        company_name=os.getenv("COMPANY_NAME", "Our Company")
+        company_name=os.getenv("COMPANY_NAME", "Our Company"),
+        meeting_platform=meeting_platform
     )
 
     return {"success": True, "sessionId": session_id, "interviewLink": db_session.interview_link, "scheduled_at": db_session.scheduled_at}
 
 @app.get("/api/hr/sessions")
-def get_sessions(db: Session = Depends(get_db)):
+def get_sessions(db: Session = Depends(get_db), user: Any = Depends(verify_token)):
     sessions_with_reports = db.query(DbSession, DbReport.verdict)\
         .outerjoin(DbReport, DbSession.id == DbReport.session_id)\
         .order_by(DbSession.created_at.desc()).all()
@@ -243,7 +248,7 @@ def get_sessions(db: Session = Depends(get_db)):
     return results
 
 @app.get("/api/hr/session/{session_id}")
-def get_session(session_id: str, db: Session = Depends(get_db)):
+def get_session(session_id: str, db: Session = Depends(get_db), user: Any = Depends(verify_token)):
     s = db.query(DbSession).filter(DbSession.id == session_id).first()
     if not s: raise HTTPException(status_code=404, detail="Not found")
     qs = db.query(DbQuestion).filter(DbQuestion.session_id == session_id).order_by(DbQuestion.question_number).all()

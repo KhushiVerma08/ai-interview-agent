@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 export default function Login({ onLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState('login'); // login, register, forgot
+  const [mode, setMode] = useState('login'); // login, forgot
   const [error, setError] = useState(null);
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -20,11 +20,6 @@ export default function Login({ onLogin }) {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         if (data.session) onLogin(data.session);
-      } else if (mode === 'register') {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        setMsg('Registration successful! You can now log in.');
-        setMode('login');
       } else if (mode === 'forgot') {
         const { error } = await supabase.auth.resetPasswordForEmail(email);
         if (error) throw error;
@@ -42,11 +37,10 @@ export default function Login({ onLogin }) {
       <div className="login-card">
         <div className="login-orb">HR</div>
         <h2 className="login-title">
-          {mode === 'login' ? 'Welcome Back' : mode === 'register' ? 'Create Account' : 'Reset Password'}
+          {mode === 'login' ? 'Welcome Back' : 'Reset Password'}
         </h2>
         <p className="login-sub">
           {mode === 'login' ? 'Enter your credentials to access the AI Interview Dashboard.' : 
-           mode === 'register' ? 'Register a new HR account.' : 
            'Enter your email to receive a password reset link.'}
         </p>
 
@@ -74,19 +68,15 @@ export default function Login({ onLogin }) {
           {msg && <div style={{ color: 'var(--accent2)', marginBottom: '10px', fontSize: '13px' }}>{msg}</div>}
 
           <button type="submit" className="login-btn" disabled={loading}>
-            {loading ? 'Processing...' : mode === 'login' ? 'Login' : mode === 'register' ? 'Register' : 'Send Reset Link'}
+            {loading ? 'Processing...' : mode === 'login' ? 'Login' : 'Send Reset Link'}
           </button>
         </form>
 
-        <div style={{ marginTop: '20px', fontSize: '12px', color: 'var(--text3)' }}>
+        <div style={{ marginTop: '20px', fontSize: '12px', color: 'var(--text3)', textAlign: 'center' }}>
           {mode === 'login' && (
-            <>
-              <span style={{ cursor: 'pointer', color: 'var(--accent)' }} onClick={() => setMode('register')}>Create an account</span>
-              {' | '}
-              <span style={{ cursor: 'pointer', color: 'var(--accent)' }} onClick={() => setMode('forgot')}>Forgot password?</span>
-            </>
+            <span style={{ cursor: 'pointer', color: 'var(--accent)' }} onClick={() => setMode('forgot')}>Forgot password?</span>
           )}
-          {(mode === 'register' || mode === 'forgot') && (
+          {mode === 'forgot' && (
             <span style={{ cursor: 'pointer', color: 'var(--accent)' }} onClick={() => setMode('login')}>Back to Login</span>
           )}
         </div>

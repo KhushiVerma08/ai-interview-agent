@@ -11,6 +11,8 @@ export default function DashboardTab() {
   const [sessions, setSessions] = useState([]);
   const [activeFilter, setActiveFilter] = useState(null);
   const [confirmedEmail, setConfirmedEmail] = useState("");
+  const [manualMeetingLink, setManualMeetingLink] = useState("");
+  const [meetingPlatform, setMeetingPlatform] = useState("Google Meet");
   const [stats, setStats] = useState({ total: 0, inProgress: 0, completed: 0, scheduled: 0, incomplete: 0 });
   const navigate = useNavigate();
 
@@ -106,7 +108,9 @@ export default function DashboardTab() {
         role: analysis.jobRole || 'Software Engineer',
         questionCount: 12,
         tempFiles,
-        confirmedEmail
+        confirmedEmail,
+        manualMeetingLink,
+        meetingPlatform
       }, { timeout: 180000 }); // 3 minute timeout for rate limit sleeps
       
       const scheduledTime = new Date(res.data.scheduled_at + "Z").toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' });
@@ -127,6 +131,8 @@ export default function DashboardTab() {
     setTempFiles(null);
     setJdFile(null);
     setResumeFile(null);
+    setManualMeetingLink("");
+    setMeetingPlatform("Google Meet");
     sessionStorage.removeItem('hr_analysis');
     sessionStorage.removeItem('hr_tempFiles');
   };
@@ -253,15 +259,41 @@ export default function DashboardTab() {
             </div>
           </div>
 
-          <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <label style={{ color: 'var(--text-sub)', fontWeight: 600 }}>Candidate Email:</label>
-            <input 
-              type="email" 
-              value={confirmedEmail} 
-              onChange={e => setConfirmedEmail(e.target.value)}
-              placeholder="Verify or enter email"
-              style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', maxWidth: '400px' }}
-            />
+          <div style={{ marginBottom: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ color: 'var(--text-sub)', fontWeight: 600, width: '150px' }}>Candidate Email:</label>
+              <input 
+                type="email" 
+                value={confirmedEmail} 
+                onChange={e => setConfirmedEmail(e.target.value)}
+                placeholder="Verify or enter email"
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', maxWidth: '400px' }}
+              />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ color: 'var(--text-sub)', fontWeight: 600, width: '150px' }}>Meeting Platform:</label>
+              <select 
+                value={meetingPlatform}
+                onChange={e => setMeetingPlatform(e.target.value)}
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', maxWidth: '400px' }}
+              >
+                <option value="Google Meet">Google Meet</option>
+                <option value="Microsoft Teams">Microsoft Teams</option>
+                <option value="Zoom">Zoom</option>
+                <option value="Webex">Webex</option>
+                <option value="Online">Other / Online</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label style={{ color: 'var(--text-sub)', fontWeight: 600, width: '150px' }}>Meeting Link:</label>
+              <input 
+                type="url" 
+                value={manualMeetingLink} 
+                onChange={e => setManualMeetingLink(e.target.value)}
+                placeholder="Paste the meeting URL here"
+                style={{ flex: 1, padding: '10px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--bg-main)', color: 'var(--text-main)', maxWidth: '400px' }}
+              />
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
@@ -315,7 +347,7 @@ export default function DashboardTab() {
             <button 
               className="btn-primary" 
               onClick={handleSchedule} 
-              disabled={loading || !confirmedEmail} 
+              disabled={loading || !confirmedEmail || !manualMeetingLink} 
               style={{ flex: 1, padding: '12px', fontSize: '15px' }}
             >
               {loading ? 'Scheduling...' : 'Schedule Interview'}
