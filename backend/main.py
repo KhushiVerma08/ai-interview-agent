@@ -19,6 +19,7 @@ from services.pdf import extract_text
 from services.claude import analyze_documents, generate_question_plan, evaluate_answer, generate_final_report, generate_opening, generate_consent_bridge, generate_edge_case_response, generate_dynamic_followup
 from services.email import send_meeting_invite
 from services.teams import create_teams_meeting
+from services.recall import request_recall_bot
 from supabase import create_client, Client
 
 app = FastAPI(title="AI Interview Agent API")
@@ -518,6 +519,7 @@ async def recall_webhook(payload: Dict[Any, Any], bg_tasks: BackgroundTasks, db:
 async def startup_event():
     from database import SessionLocal
     asyncio.create_task(run_auto_purge())
+    asyncio.create_task(run_bot_spawner())
 
 async def run_auto_purge():
     from database import SessionLocal
@@ -539,4 +541,37 @@ async def run_auto_purge():
         except Exception as e:
             print(f"Auto-purge error: {e}")
         await asyncio.sleep(86400)
+
+async def run_bot_spawner():
+    from database import SessionLocal
+    while True:
+        try:
+            with SessionLocal() as db:
+                # Find pending bots where scheduled_at is within the next 5 minutes
+                cutoff = ist_now() + timedelta(minutes=5)
+                cutoff_str = cutoff.isoformat()
+                
+                impending_sessions = db.query(DbSession).filter(
+                    DbSession.bot_status == 'pending',
+                    DbSession.scheduled_at <= cutoff_str
+                ).all()
+                
+                for s in impending_sessions:
+                    print(f"Spawning Recall bot for session {s.id}")
+                    if s.teams_meeting_url:
+                        res = request_recall_bot(s.teams_meeting_url)
+                        if res:
+                            s.bot_status = 'requested'
+                        else:
+                            s.bot_status = 'failed'
+                    else:
+                        s.bot_status = 'no_url'
+                        
+                if impending_sessions:
+                    db.commit()
+        except Exception as e:
+            print(f"Bot spawner error: {e}")
+            
+        await asyncio.sleep(60)
+
 

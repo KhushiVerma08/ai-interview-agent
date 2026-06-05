@@ -58,6 +58,7 @@ class Session(Base):
     interview_link = Column(String)
     current_question_index = Column(Integer, default=1)
     scheduled_at = Column(String)
+    bot_status = Column(String, default='pending')
     failure_reason = Column(String)
     started_at = Column(String)
     ended_at = Column(String)
