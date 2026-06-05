@@ -167,6 +167,7 @@ async def schedule_interview(payload: Dict[Any, Any], background_tasks: Backgrou
             target_skill=q.get("targetSkill"),
             scoring_criteria=json.dumps(q.get("scoringCriteria", {})),
             followup_triggers=json.dumps(q.get("followupTriggers", [])),
+            key_concepts=json.dumps(q.get("keyConcepts", [])),
             created_at=ist_now().isoformat()
         ))
 
@@ -324,7 +325,11 @@ async def answer_question(payload: Dict[Any, Any], bg_tasks: BackgroundTasks, db
     upcoming_dicts = [{"id": u.id, "questionText": u.question_text, "targetSkill": u.target_skill} for u in upcoming_qs]
     
     eval_res = await evaluate_answer(
-        {"questionText": payload.get("qText"), "scoringCriteria": json.loads(q.scoring_criteria if q and q.scoring_criteria else "{}")},
+        {
+            "questionText": payload.get("qText"), 
+            "scoringCriteria": json.loads(q.scoring_criteria if q and q.scoring_criteria else "{}"),
+            "keyConcepts": json.loads(q.key_concepts if q and q.key_concepts else "[]")
+        },
         ans_text,
         s.detected_level,
         upcoming_questions=upcoming_dicts
@@ -450,7 +455,11 @@ async def recall_webhook(payload: Dict[Any, Any], bg_tasks: BackgroundTasks, db:
 
     # 3. Score the answer (T7.2)
     eval_res = await evaluate_answer(
-        {"questionText": i_question.question_text, "scoringCriteria": json.loads(db_question.scoring_criteria)},
+        {
+            "questionText": i_question.question_text, 
+            "scoringCriteria": json.loads(db_question.scoring_criteria if db_question and db_question.scoring_criteria else "{}"),
+            "keyConcepts": json.loads(db_question.key_concepts if db_question and db_question.key_concepts else "[]")
+        },
         candidate_answer,
         full_session.detected_level
     )

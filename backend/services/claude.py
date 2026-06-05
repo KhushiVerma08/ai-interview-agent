@@ -212,6 +212,7 @@ Return ONLY a JSON array:
     "depth": "surface|medium|deep",
     "flow": "core_technical|practical|gap_probe|behavioral|closing",
     "targetSkill": "specific skill this tests",
+    "keyConcepts": ["concept1", "concept2", "concept3"],
     "followupTriggers": ["keyword1"],
     "scoringCriteria": {{
       "excellent": "...",
@@ -235,6 +236,7 @@ Return ONLY a JSON array:
             "depth": "surface",
             "flow": "opening",
             "targetSkill": "communication",
+            "keyConcepts": ["consent", "background summary", "role interest"],
             "followupTriggers": ["background"],
             "scoringCriteria": {
                 "excellent": "Provides consent and gives a clear, concise background summary.",
@@ -250,6 +252,7 @@ Return ONLY a JSON array:
             "depth": "surface",
             "flow": "opening",
             "targetSkill": "communication",
+            "keyConcepts": ["achievement details", "impact or metrics", "personal role"],
             "followupTriggers": ["achievement", "success"],
             "scoringCriteria": {
                 "excellent": "Clearly articulates a significant achievement with metrics or clear impact.",
@@ -280,6 +283,7 @@ async def evaluate_answer(question: dict, answer: str, level: str, previous_answ
 CANDIDATE LEVEL: {level}
 QUESTION: "{question.get('questionText')}"
 SCORING CRITERIA: {json.dumps(question.get('scoringCriteria'))}
+KEY CONCEPTS TO COVER: {json.dumps(question.get('keyConcepts', []))}
 {context}
 {upcoming_context}
 

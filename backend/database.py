@@ -78,6 +78,7 @@ class Question(Base):
     target_skill = Column(String)
     scoring_criteria = Column(String)
     followup_triggers = Column(String)
+    key_concepts = Column(String)
     created_at = Column(String)
 
 class Answer(Base):
