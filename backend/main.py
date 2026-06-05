@@ -399,7 +399,7 @@ async def answer_question(payload: Dict[Any, Any], bg_tasks: BackgroundTasks, db
     
     if is_last:
         s.status = "completed"
-        # bg_tasks.add_task(generate_final_report_task, sid) # Future
+        bg_tasks.add_task(generate_final_report_task, sid) # Future
         
     db.commit()
     
